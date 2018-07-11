@@ -249,6 +249,7 @@ def write_class_param_file(par,param_vary,sign_vary,prefix_out,write_full=True,a
     rt,drt,osid_rt=par.get_param_properties("rt")
     lmcb,dlmcb,osid_lmcb=par.get_param_properties("lmcb")
     etab,detab,osid_etab=par.get_param_properties("etab")
+
     #val,dval,osid=par.get_param_properties(param_vary)
 
     if par.use_cmb_params :
@@ -266,6 +267,21 @@ def write_class_param_file(par,param_vary,sign_vary,prefix_out,write_full=True,a
         a_s=2.1*a_s_rescale**2
         if param_vary=="s8" :
             s8=add_fdiff(s8,ds8,sign_vary,osid_s8)
+=======
+    lksb,dlksb,osid_lksb=par.get_param_properties("lksb")
+#    val,dval,osid=par.get_param_properties(param_vary)
+
+    def add_fdiff(val,dval,sig,osd) :
+        if osd==0 :
+            return val+sig*dval
+        else :
+            return val+osd*(1.5+0.5*sig)*dval
+
+    if param_vary=="och2" :
+        och2=add_fdiff(och2,doch2,sign_vary,osid_och2)
+    if param_vary=="obh2" :
+        obh2=add_fdiff(obh2,dobh2,sign_vary,osid_obh2)
+
     if param_vary=="hh" :
         hh=add_fdiff(hh,dhh,sign_vary,osid_hh)
     if par.model=='JBD' :
@@ -327,13 +343,20 @@ def write_class_param_file(par,param_vary,sign_vary,prefix_out,write_full=True,a
         lmcb=add_fdiff(lmcb,dlmcb,sign_vary,osid_lmcb)
     if param_vary=="etab" :
         etab=add_fdiff(etab,detab,sign_vary,osid_etab)
+    if param_vary=="lksb" :
+        lksb=add_fdiff(lksb,dlksb,sign_vary,osid_lksb)
 
     if par.model=='Horndeski' :
         kv=10.**lkv
     mcb=10.**lmcb
+
     if not par.use_cmb_params :
         och2=(om-ob)*hh**2
         obh2=ob*hh**2
+=======
+    ksb=10.**lksb
+
+
     nuisance_name,tr_name,inode=my_parser(param_vary)
 
     n_tracers_nc=0
@@ -501,6 +524,7 @@ def write_class_param_file(par,param_vary,sign_vary,prefix_out,write_full=True,a
             strout+="non linear = baryon\n"
             strout+="M_c = %lE\n"%mcb
             strout+="eta_b = %lE\n"%etab
+            strout+="k_star = %lE\n"%ksb
         else :
             strout+="non linear = halofit\n"
     if write_full :
