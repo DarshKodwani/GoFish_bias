@@ -1,18 +1,25 @@
+import pyccl as ccl
 import numpy as np
 import matplotlib.pyplot as plt
 import os as os
 import sys as sys
-from scipy.special import erf
+from scipy.special import erf,jv
 from scipy.interpolate import interp1d
 from scipy.integrate import quad
 from scipy.interpolate import UnivariateSpline as spline
+from scipy.linalg import block_diag
 import time
+import in_out as gio
 
 NZ_IN_AMIN=True
 S_GAMMA=0.3
 NU_21=1420.405751786
 CLIGHT=299.792458
 FWHM2G=0.42466090014
+
+#Darsh: Import response
+resload=np.loadtxt("Response_z0.txt", unpack=True)
+res=interp1d(resload[0,:],resload[1,:],bounds_error=False,fill_value=0)
 
 def pdf_photo(z,z0,zf,sz) :
     denom=1./np.sqrt(2*sz*sz)
@@ -256,6 +263,27 @@ class Tracer :
                                                 par.output_dir+"/","sphz")
             self.nuisance_bphz=NuisanceFunction("bphz_"+name+"_",self.bins_file,self.nz_file,
                                                 par.output_dir+"/","bphz")
+            #Darsh: Defining Galaxy Q's
+            self.nzfuncs=[]
+            self.nbinst=[]
+            self.z0_samples=[]
+            self.zf_samples=[]
+            self.sz_samples=[]
+            z0_arr1=np.atleast_1d(data[0])
+            zf_arr1=np.atleast_1d(data[1])
+            sz_arr1=np.atleast_1d(data[2])
+            z_nz_arr,nz_nz_arr=np.loadtxt(self.nz_file,unpack=True)
+            for i in np.arange(self.nbins):
+                self.nbinst.append(i)
+                pz_unnorm=nz_nz_arr*pdf_photo(z_nz_arr,z0_arr1[i],zf_arr1[i],sz_arr1[i])
+                pzf=interp1d(z_nz_arr,pz_unnorm,bounds_error=False,fill_value=0)
+                norm=quad(pzf,z0_arr1[i]-5*sz_arr1[i],zf_arr1[i]+5*sz_arr1[i])[0]
+                self.nzfuncs.append(interp1d(z_nz_arr,pz_unnorm/norm,bounds_error=False,fill_value=0))
+                self.z0_samples.append(z0_arr1[i])
+                self.zf_samples.append(zf_arr1[i])
+                self.sz_samples.append(sz_arr1[i])
+            self.z_sampling=z_nz_arr.copy()
+            #Darsh end
         elif type_str=="intensity_mapping" :
             self.tracer_type="intensity_mapping"
             self.bins_file=bins_file
@@ -311,6 +339,21 @@ class Tracer :
                                                 par.output_dir+"/","sphz")
             self.nuisance_bphz=NuisanceFunction("bphz_"+name+"_",self.bins_file,self.nz_file,
                                                 par.output_dir+"/","bphz")
+            #Darsh start
+            self.nzfuncs=[]
+            self.nbinst=[]
+            z0_arr1=np.atleast_1d(data[0])
+            zf_arr1=np.atleast_1d(data[1])
+            sz_arr1=np.atleast_1d(data[2])
+            z_nz_arr,nz_nz_arr=np.loadtxt(self.nz_file,unpack=True)
+            for i in np.arange(self.nbins):
+                self.nbinst.append(i)
+                pz_unnorm=nz_nz_arr*pdf_photo(z_nz_arr,z0_arr1[i],zf_arr1[i],sz_arr1[i])
+                pzf=interp1d(z_nz_arr,pz_unnorm,bounds_error=False,fill_value=0)
+                norm=quad(pzf,z0_arr1[i]-5*sz_arr1[i],zf_arr1[i]+5*sz_arr1[i])[0]
+                self.nzfuncs.append(interp1d(z_nz_arr,pz_unnorm/norm,bounds_error=False,fill_value=0))
+            self.z_sampling=z_nz_arr.copy()
+            #Darsh end
         elif type_str=="cmb_lensing" :
             self.tracer_type="cmb_lensing"
             self.beam_amin=beam_amin[0]
@@ -396,6 +439,108 @@ def get_foreground_cls(tr1,tr2,larr,pname) :
 
     return cl
 
+#Darsh SSC start
+def SSC(pname,pname_val,pname_dval,sign,cosmo_dictionary,tracers,tracer1,tracer2,bin1,bin2,larr,d_larr,fsky):
+    cosmo=ccl.Cosmology(Omega_c=cosmo_dictionary['om'],Omega_b=cosmo_dictionary['ob'],
+                        h=cosmo_dictionary['hh'],sigma8=cosmo_dictionary['s8'],n_s=cosmo_dictionary['ns'],
+                        w0 = cosmo_dictionary['w0'], wa = cosmo_dictionary['wa'],
+                        N_nu_rel=3.046,Omega_k=0.)
+    nuisance_name,tr_name,inode=gio.my_parser(pname)
+    n_rebin=4
+    clight=2.99792E5
+    HO=100*cosmo_dictionary['hh']
+    hoverh_unit=HO/clight
+    OmegaM=cosmo_dictionary['om'] #Randomly put, is this super important?
+    id_use=np.where([(tr.tracer_type=='gal_clustering') or (tr.tracer_type=='gal_shear') for tr in tracers])[0]
+    dz_sampling=0.005
+    zmax=np.max([np.max(tr.z_sampling) for tr in tracers[id_use]])
+    zmin=np.min([np.min(tr.z_sampling) for tr in tracers[id_use]])
+    zfull=np.arange(zmin,zmax,dz_sampling)
+    hfull=ccl.h_over_h0(cosmo,1./(1.+zfull))*hoverh_unit
+    chis=ccl.comoving_radial_distance(cosmo,1./(1.+zfull))+0.01
+    qfull=[]
+    for itr,tr in enumerate(tracers) :
+        if (tr.tracer_type=='gal_clustering') :
+            q_tr=[]
+            if (tr.name==tr_name) and (nuisance_name=="bias") :
+                zbz,bbz=np.loadtxt(tr.nuisance_bias.get_filename(inode,sign),unpack=True)
+            else :
+                zbz,bbz=np.loadtxt(tr.nuisance_bias.get_filename(-1,sign),unpack=True)
+            bzf=interp1d(zbz,bbz,bounds_error=False,fill_value=bbz[0])
+            bz_here=bzf(zfull)
+            for i in np.arange(tr.nbins):
+                delz=0
+                if (tr.name==tr_name) and (nuisance_name=="bphz") and (inode==i) :
+                    delz=pname_dval*sign
+                q_tr.append(tr.nzfuncs[i](zfull-delz)*hfull*bz_here)
+            qfull.append(np.array(q_tr))
+        elif (tr.tracer_type=='gal_shear') :
+            q_tr=[]
+            for i in np.arange(tr.nbins):
+                delz=0
+                if (tr.name==tr_name) and (nuisance_name=="bphz") and (inode==i) :
+                    delz=pname_dval*sign
+                def nz_shifted(z) :
+                    return tr.nzfuncs[i](z-delz)
+                prefac_lensing=3*hoverh_unit**2*OmegaM/2
+                qarr=np.zeros(len(zfull))
+                for iz,z in enumerate(zfull) :
+                    qarr[iz]=np.sum(nz_shifted(zfull[iz:])*(1-chis[iz]/chis[iz:]))*dz_sampling
+                q_tr.append(qarr*prefac_lensing*chis*(1+zfull))
+            qfull.append(np.array(q_tr))
+        else :
+            qfull.append([])
+
+    #plt.figure()
+    #for qtr in qfull :
+    #    for q in qtr :
+    #        plt.plot(zfull,q)
+    #plt.show()
+    #exit(1)
+
+    #for i in np.arange(len(qfull[0][:,0])):
+    #    plt.plot(zfull,qfull[0][i,:], label="bin %d" %i)
+    #plt.legend()
+    #plt.show()
+    larr_2d=larr[:,None]+d_larr[:,None]*(-0.5+np.arange(n_rebin)/float(n_rebin))[None,:]
+    P_mm=np.mean(np.array([ccl.nonlin_matter_power(cosmo,larr_2d.flatten()/chi, 1./(1.+z)).reshape([len(larr),n_rebin]) for chi,z in zip(chis,zfull)]),axis=2)
+    response=np.mean(np.array([res(larr_2d.flatten()/chi).reshape([len(larr),n_rebin]) for chi in chis]),axis=2)
+    theta_survey=np.arccos(1-2*fsky)
+    def sigma_int(lk,cosmo,z,Thetas):
+        k=np.exp(lk)
+        x=k*(ccl.comoving_radial_distance(cosmo,1./(1.+z))+0.0001)*Thetas
+        win=2*jv(1,x)/x
+        return k**2*ccl.linear_matter_power(cosmo,k,1./(1.+z))*(win**2)
+    z_lo=np.linspace(0,3,20)
+    sigmab=[]
+    for z in z_lo:
+        sigmab.append(quad(sigma_int,np.log(1e-4),np.log(1e-1),args=(cosmo,z,theta_survey))[0]/(2*np.pi)) #2pi factor is here
+    sigmab=np.array(sigmab)
+    logsigbf=interp1d(z_lo,np.log(sigmab),bounds_error=False,fill_value=0)
+    sigmab=np.exp(logsigbf(zfull))
+    sscfull=np.zeros((len(larr),len(larr)))
+    covsscfull=np.zeros([len(larr)*len(tracer1),len(larr)*len(tracer1)])
+    kernel=dz_sampling*P_mm[:,None,:]*response[:,None,:]*P_mm[:,:,None]*response[:,:,None]*(sigmab/((chis**4)*hfull))[:,None,None]
+    nell=len(larr)
+    for i1 in np.arange(len(tracer1)) :
+        t1=tracer1[i1]
+        t2=tracer2[i1]
+        b1=bin1[i1]
+        b2=bin2[i1]
+        for i2 in np.arange(i1,len(tracer1)) :
+            t3=tracer1[i2]
+            t4=tracer2[i2]
+            b3=bin1[i2]
+            b4=bin2[i2]
+            tempsum=np.sum((qfull[t1][b1,:]*qfull[t2][b2,:]*qfull[t3][b3,:]*qfull[t4][b4,:])[:,None,None]*kernel[:,:,:],axis=0)
+            covsscfull[i1*nell:(i1+1)*nell][:,i2*nell:(i2+1)*nell]=tempsum
+            if i2!=i1 :
+                covsscfull[i2*nell:(i2+1)*nell][:,i1*nell:(i1+1)*nell]=tempsum
+    return covsscfull
+
+    
+#Darsh SSC test end       
+
 def get_cross_noise(tr1,tr2,larr) :
     nbins1=tr1.nbins
     nbins2=tr2.nbins
@@ -415,7 +560,7 @@ def get_cross_noise(tr1,tr2,larr) :
             for i in np.arange(nbins1) :
                 def integ(z) :
                     return nzf(z)*pdf_photo(z,z0_arr1[i],zf_arr1[i],sz_arr1[i])
-                ndens=quad(integ,z0_arr1[i]-5*sz_arr1[i],zf_arr1[i]+5*sz_arr1[i])[0]#
+                ndens=quad(integ,z0_arr1[i]-5*sz_arr1[i],zf_arr1[i]+5*sz_arr1[i])[0]
 #                parr=pdf_photo(z_nz_arr,z0_arr1[i],zf_arr1[i],sz_arr1[i])
 #                integ=interp1d(z_nz_arr,parr*nz_nz_arr)
 #                ndens=quad(integ,z_nz_arr[0],z_nz_arr[-1])[0];

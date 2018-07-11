@@ -1,0 +1,7 @@
+1) Need to compute the parameter dependence of the SSC and Gaussian. 
+- For gaussian, can create an array cov_gauss_p and cov_gauss_m to compute the derivative of the parameters. 
+2) Need to create dicov analogous to dcl_arr
+3) To do that basically need to do the following:
+- create cosmop and cosmom with cosmology parameters plus and minus
+- Compute inverse_cov using them, i.e  covp = inv_cov(cosmop,False)
+- Then write the trace part for SSC
