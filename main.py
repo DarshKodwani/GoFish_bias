@@ -33,9 +33,15 @@ if (not os.path.isfile(par.output_dir+"/"+par.output_fisher+"/fisher_raw.npz")) 
         par.get_cls_noise()
         print " "
 
-    if par.just_run_cls==False :
-        par.plot_cls()
-    print " "
+#Darsh: Comment out to fix error
+#    if par.just_run_cls==False :
+#        par.plot_cls()
+#    print " "
+
+#Darsh start: PDCM bias
+
+#if par.bias_PDCM == True : 
+    
 
 if par.just_run_cls==False :
     print "<> Computing Fisher matrix"
@@ -44,6 +50,7 @@ if par.just_run_cls==False :
     par.get_fisher_bao()
     par.get_fisher_prior()
     par.get_bias()
+#    par.get_PDCM_bias()
     par.join_fishers()
     par.plot_fisher()
     print " "

@@ -1,18 +1,25 @@
+import pyccl as ccl
 import numpy as np
 import matplotlib.pyplot as plt
 import os as os
 import sys as sys
-from scipy.special import erf
+from scipy.special import erf,jv
 from scipy.interpolate import interp1d
 from scipy.integrate import quad
 from scipy.interpolate import UnivariateSpline as spline
+from scipy.linalg import block_diag
 import time
+import in_out as gio
 
 NZ_IN_AMIN=True
 S_GAMMA=0.3
 NU_21=1420.405751786
 CLIGHT=299.792458
 FWHM2G=0.42466090014
+
+#Darsh: Import response
+resload=np.loadtxt("Response_z0.txt", unpack=True)
+res=interp1d(resload[0,:],resload[1,:],bounds_error=False,fill_value=0)
 
 def pdf_photo(z,z0,zf,sz) :
     denom=1./np.sqrt(2*sz*sz)
@@ -262,6 +269,27 @@ class Tracer :
                                                 par.output_dir+"/","sphz")
             self.nuisance_bphz=NuisanceFunction("bphz_"+name+"_",self.bins_file,self.nz_file,
                                                 par.output_dir+"/","bphz")
+            #Darsh: Defining Galaxy Q's
+            self.nzfuncs=[]
+            self.nbinst=[]
+            self.z0_samples=[]
+            self.zf_samples=[]
+            self.sz_samples=[]
+            z0_arr1=np.atleast_1d(data[0])
+            zf_arr1=np.atleast_1d(data[1])
+            sz_arr1=np.atleast_1d(data[2])
+            z_nz_arr,nz_nz_arr=np.loadtxt(self.nz_file,unpack=True)
+            for i in np.arange(self.nbins):
+                self.nbinst.append(i)
+                pz_unnorm=nz_nz_arr*pdf_photo(z_nz_arr,z0_arr1[i],zf_arr1[i],sz_arr1[i])
+                pzf=interp1d(z_nz_arr,pz_unnorm,bounds_error=False,fill_value=0)
+                norm=quad(pzf,z0_arr1[i]-5*sz_arr1[i],zf_arr1[i]+5*sz_arr1[i])[0]
+                self.nzfuncs.append(interp1d(z_nz_arr,pz_unnorm/norm,bounds_error=False,fill_value=0))
+                self.z0_samples.append(z0_arr1[i])
+                self.zf_samples.append(zf_arr1[i])
+                self.sz_samples.append(sz_arr1[i])
+            self.z_sampling=z_nz_arr.copy()
+            #Darsh end
         elif type_str=="intensity_mapping" :
             self.tracer_type="intensity_mapping"
             self.bins_file=bins_file
@@ -317,6 +345,21 @@ class Tracer :
                                                 par.output_dir+"/","sphz")
             self.nuisance_bphz=NuisanceFunction("bphz_"+name+"_",self.bins_file,self.nz_file,
                                                 par.output_dir+"/","bphz")
+            #Darsh start
+            self.nzfuncs=[]
+            self.nbinst=[]
+            z0_arr1=np.atleast_1d(data[0])
+            zf_arr1=np.atleast_1d(data[1])
+            sz_arr1=np.atleast_1d(data[2])
+            z_nz_arr,nz_nz_arr=np.loadtxt(self.nz_file,unpack=True)
+            for i in np.arange(self.nbins):
+                self.nbinst.append(i)
+                pz_unnorm=nz_nz_arr*pdf_photo(z_nz_arr,z0_arr1[i],zf_arr1[i],sz_arr1[i])
+                pzf=interp1d(z_nz_arr,pz_unnorm,bounds_error=False,fill_value=0)
+                norm=quad(pzf,z0_arr1[i]-5*sz_arr1[i],zf_arr1[i]+5*sz_arr1[i])[0]
+                self.nzfuncs.append(interp1d(z_nz_arr,pz_unnorm/norm,bounds_error=False,fill_value=0))
+            self.z_sampling=z_nz_arr.copy()
+            #Darsh end
         elif type_str=="cmb_lensing" :
             self.tracer_type="cmb_lensing"
             self.beam_amin=beam_amin[0]
@@ -367,7 +410,7 @@ class Tracer :
 
         return self.nbins
 
-def get_foreground_cls(tr1,tr2,lmax,pname) :
+def get_foreground_cls(tr1,tr2,larr,pname) :
     z,tz=np.loadtxt(tr1.tz_file,unpack=True)
     tofz=interp1d(z,tz)
 
@@ -380,8 +423,7 @@ def get_foreground_cls(tr1,tr2,lmax,pname) :
     tbg_arr2=np.array([tofz(z) for z in z_arr2])
     nu_arr2=NU_21/(1+z_arr2)
     
-    larr=np.arange(lmax+1)
-    cl=np.zeros([lmax+1,tr1.nbins,tr2.nbins])
+    cl=np.zeros([len(larr),tr1.nbins,tr2.nbins])
     cl[:,:,:]=(tr1.a_fg/(tbg_arr1[:,None]*tbg_arr2[None,:]))[None,:,:]
     cl[:,:,:]*=(((nu_arr1[:,None]*nu_arr2[None,:])/tr1.nux_fg**2)**tr1.alp_fg)[None,:,:]
     cl[:,:,:]*=(np.exp(-0.5*(np.log(nu_arr1[:,None]/nu_arr2[None,:])/tr1.xi_fg)**2))[None,:,:]
@@ -403,11 +445,113 @@ def get_foreground_cls(tr1,tr2,lmax,pname) :
 
     return cl
 
-def get_cross_noise(tr1,tr2,lmax) :
+#Darsh SSC start
+def SSC(pname,pname_val,pname_dval,sign,cosmo_dictionary,tracers,tracer1,tracer2,bin1,bin2,larr,d_larr,fsky):
+    cosmo=ccl.Cosmology(Omega_c=cosmo_dictionary['om'],Omega_b=cosmo_dictionary['ob'],
+                        h=cosmo_dictionary['hh'],sigma8=cosmo_dictionary['s8'],n_s=cosmo_dictionary['ns'],
+                        w0 = cosmo_dictionary['w0'], wa = cosmo_dictionary['wa'],
+                        N_nu_rel=3.046,Omega_k=0.)
+    nuisance_name,tr_name,inode=gio.my_parser(pname)
+    n_rebin=4
+    clight=2.99792E5
+    HO=100*cosmo_dictionary['hh']
+    hoverh_unit=HO/clight
+    OmegaM=cosmo_dictionary['om'] #Randomly put, is this super important?
+    id_use=np.where([(tr.tracer_type=='gal_clustering') or (tr.tracer_type=='gal_shear') for tr in tracers])[0]
+    dz_sampling=0.005
+    zmax=np.max([np.max(tr.z_sampling) for tr in tracers[id_use]])
+    zmin=np.min([np.min(tr.z_sampling) for tr in tracers[id_use]])
+    zfull=np.arange(zmin,zmax,dz_sampling)
+    hfull=ccl.h_over_h0(cosmo,1./(1.+zfull))*hoverh_unit
+    chis=ccl.comoving_radial_distance(cosmo,1./(1.+zfull))+0.01
+    qfull=[]
+    for itr,tr in enumerate(tracers) :
+        if (tr.tracer_type=='gal_clustering') :
+            q_tr=[]
+            if (tr.name==tr_name) and (nuisance_name=="bias") :
+                zbz,bbz=np.loadtxt(tr.nuisance_bias.get_filename(inode,sign),unpack=True)
+            else :
+                zbz,bbz=np.loadtxt(tr.nuisance_bias.get_filename(-1,sign),unpack=True)
+            bzf=interp1d(zbz,bbz,bounds_error=False,fill_value=bbz[0])
+            bz_here=bzf(zfull)
+            for i in np.arange(tr.nbins):
+                delz=0
+                if (tr.name==tr_name) and (nuisance_name=="bphz") and (inode==i) :
+                    delz=pname_dval*sign
+                q_tr.append(tr.nzfuncs[i](zfull-delz)*hfull*bz_here)
+            qfull.append(np.array(q_tr))
+        elif (tr.tracer_type=='gal_shear') :
+            q_tr=[]
+            for i in np.arange(tr.nbins):
+                delz=0
+                if (tr.name==tr_name) and (nuisance_name=="bphz") and (inode==i) :
+                    delz=pname_dval*sign
+                def nz_shifted(z) :
+                    return tr.nzfuncs[i](z-delz)
+                prefac_lensing=3*hoverh_unit**2*OmegaM/2
+                qarr=np.zeros(len(zfull))
+                for iz,z in enumerate(zfull) :
+                    qarr[iz]=np.sum(nz_shifted(zfull[iz:])*(1-chis[iz]/chis[iz:]))*dz_sampling
+                q_tr.append(qarr*prefac_lensing*chis*(1+zfull))
+            qfull.append(np.array(q_tr))
+        else :
+            qfull.append([])
+
+    #plt.figure()
+    #for qtr in qfull :
+    #    for q in qtr :
+    #        plt.plot(zfull,q)
+    #plt.show()
+    #exit(1)
+
+    #for i in np.arange(len(qfull[0][:,0])):
+    #    plt.plot(zfull,qfull[0][i,:], label="bin %d" %i)
+    #plt.legend()
+    #plt.show()
+    larr_2d=larr[:,None]+d_larr[:,None]*(-0.5+np.arange(n_rebin)/float(n_rebin))[None,:]
+    P_mm=np.mean(np.array([ccl.nonlin_matter_power(cosmo,larr_2d.flatten()/chi, 1./(1.+z)).reshape([len(larr),n_rebin]) for chi,z in zip(chis,zfull)]),axis=2)
+    response=np.mean(np.array([res(larr_2d.flatten()/chi).reshape([len(larr),n_rebin]) for chi in chis]),axis=2)
+    theta_survey=np.arccos(1-2*fsky)
+    def sigma_int(lk,cosmo,z,Thetas):
+        k=np.exp(lk)
+        x=k*(ccl.comoving_radial_distance(cosmo,1./(1.+z))+0.0001)*Thetas
+        win=2*jv(1,x)/x
+        return k**2*ccl.linear_matter_power(cosmo,k,1./(1.+z))*(win**2)
+    z_lo=np.linspace(0,3,20)
+    sigmab=[]
+    for z in z_lo:
+        sigmab.append(quad(sigma_int,np.log(1e-4),np.log(1e-1),args=(cosmo,z,theta_survey))[0]/(2*np.pi)) #2pi factor is here
+    sigmab=np.array(sigmab)
+    logsigbf=interp1d(z_lo,np.log(sigmab),bounds_error=False,fill_value=0)
+    sigmab=np.exp(logsigbf(zfull))
+    sscfull=np.zeros((len(larr),len(larr)))
+    covsscfull=np.zeros([len(larr)*len(tracer1),len(larr)*len(tracer1)])
+    kernel=dz_sampling*P_mm[:,None,:]*response[:,None,:]*P_mm[:,:,None]*response[:,:,None]*(sigmab/((chis**4)*hfull))[:,None,None]
+    nell=len(larr)
+    for i1 in np.arange(len(tracer1)) :
+        t1=tracer1[i1]
+        t2=tracer2[i1]
+        b1=bin1[i1]
+        b2=bin2[i1]
+        for i2 in np.arange(i1,len(tracer1)) :
+            t3=tracer1[i2]
+            t4=tracer2[i2]
+            b3=bin1[i2]
+            b4=bin2[i2]
+            tempsum=np.sum((qfull[t1][b1,:]*qfull[t2][b2,:]*qfull[t3][b3,:]*qfull[t4][b4,:])[:,None,None]*kernel[:,:,:],axis=0)
+            covsscfull[i1*nell:(i1+1)*nell][:,i2*nell:(i2+1)*nell]=tempsum
+            if i2!=i1 :
+                covsscfull[i2*nell:(i2+1)*nell][:,i1*nell:(i1+1)*nell]=tempsum
+    return covsscfull
+
+    
+#Darsh SSC test end       
+
+def get_cross_noise(tr1,tr2,larr) :
     nbins1=tr1.nbins
     nbins2=tr2.nbins
 
-    cl_noise=np.zeros([lmax+1,nbins1,nbins2])
+    cl_noise=np.zeros([len(larr),nbins1,nbins2])
     if ((tr1.name==tr2.name) and (tr1.tracer_type==tr2.tracer_type)) :
         if tr1.tracer_type=='gal_clustering' :
             data1=np.loadtxt(tr1.bins_file,unpack=True)
@@ -422,11 +566,11 @@ def get_cross_noise(tr1,tr2,lmax) :
             for i in np.arange(nbins1) :
                 def integ(z) :
                     return nzf(z)*pdf_photo(z,z0_arr1[i],zf_arr1[i],sz_arr1[i])
-                ndens=quad(integ,z0_arr1[i]-5*sz_arr1[i],zf_arr1[i]+5*sz_arr1[i])[0]#
+                ndens=quad(integ,z0_arr1[i]-5*sz_arr1[i],zf_arr1[i]+5*sz_arr1[i])[0]
 #                parr=pdf_photo(z_nz_arr,z0_arr1[i],zf_arr1[i],sz_arr1[i])
 #                integ=interp1d(z_nz_arr,parr*nz_nz_arr)
 #                ndens=quad(integ,z_nz_arr[0],z_nz_arr[-1])[0];
-                print i, ndens,z0_arr1[i],zf_arr1[i],sz_arr1[i]
+#                print i, ndens,z0_arr1[i],zf_arr1[i],sz_arr1[i]
                 cl_noise[:,i,i]=1./np.fmax(ndens,1E-16)
         elif tr1.tracer_type=='intensity_mapping' :
             #Compute background temperature
@@ -449,34 +593,33 @@ def get_cross_noise(tr1,tr2,lmax) :
             sigma2_noise*=4*np.pi*tr1.fsky_im/(3.6E9*tr1.t_total*dnu_arr)
 
             #Compute beam factor
-            l=np.arange(lmax+1)
             beam_fwhm=CLIGHT/(tr1.dish_size*nu_arr)
             if ((tr1.im_type=="single_dish") or (tr1.im_type=="hybrid")) :
                 beam_rad=beam_fwhm*FWHM2G
-                factor_beam_sd=tr1.n_dish*np.exp(-(l*(l+1))[None,:]*(beam_rad**2)[:,None])
+                factor_beam_sd=tr1.n_dish*np.exp(-(larr*(larr+1))[None,:]*(beam_rad**2)[:,None])
             else :
-                factor_beam_sd=np.zeros([len(nu_arr),len(l)])
+                factor_beam_sd=np.zeros([len(nu_arr),len(larr)])
             if ((tr1.im_type=="interferometer") or (tr1.im_type=="hybrid")) :
                 lambda_arr=CLIGHT/nu_arr
                 dist,nbase=np.loadtxt(tr1.base_file,unpack=True)
                 ndistint=interp1d(dist,nbase*dist*2*np.pi,bounds_error=False,fill_value=0.)
                 norm=0.5*tr1.n_dish*(tr1.n_dish-1.)/quad(ndistint,dist[0],dist[-1])[0]
                 nbase*=norm; ndist=interp1d(dist,nbase,bounds_error=False,fill_value=0.)
-                n_baselines=ndist(l[None,:]*lambda_arr[:,None]/(2*np.pi))
+                n_baselines=ndist(larr[None,:]*lambda_arr[:,None]/(2*np.pi))
                 factor_beam_if=n_baselines[:,:]*((lambda_arr/beam_fwhm)**2)[:,None]
             elif tr1.im_type=="generic" :
                 lambda_arr=CLIGHT/nu_arr
-                dist_arr=(l[None,:]*lambda_arr[:,None]).flatten()
+                dist_arr=(larr[None,:]*lambda_arr[:,None]).flatten()
                 f=np.exp(-(dist_arr*FWHM2G/np.fmax(tr1.baseline_max,1E-1))**2)
                 f[np.where(dist_arr<2*np.pi*tr1.baseline_min)]=0.
 #                factor_beam_if*=1-np.exp(-(dist_arr*FWHM2G/np.fmax(tr1.baseline_min,1E-1))**2)
 #                dist_arr=(l[None,:]*lambda_arr[:,None]/(2*np.pi)).flatten()
 #                f=np.zeros_like(dist_arr); f[np.where((dist_arr>=tr1.baseline_min) &
 #                                                      (dist_arr<=tr1.baseline_max))]=1.;
-                factor_beam_if=np.reshape(f,[len(lambda_arr),len(l)])
+                factor_beam_if=np.reshape(f,[len(lambda_arr),len(larr)])
                 sigma2_noise=(tr1.t_inst/tbg_arr)**2/dnu_arr
             else :
-                factor_beam_if=np.zeros([len(nu_arr),len(l)])
+                factor_beam_if=np.zeros([len(nu_arr),len(larr)])
             factor_beam=np.fmax(factor_beam_sd,factor_beam_if)
             for i in np.arange(nbins1) :
                 cl_noise[:,i,i]=sigma2_noise[i]/np.fmax(factor_beam[i,:],1E-16)
@@ -558,29 +701,31 @@ def get_cross_noise(tr1,tr2,lmax) :
 #                q['lMin']['BB']=50
 #                q['lMax']['BB']=4000
             
-            larr=np.arange(len(cl_fid['TT_unlen']))+2
+            larrb=np.arange(len(cl_fid['TT_unlen']))+2
 
-            ell,nl=get_lensing_noise(larr,cl_fid,nl_fid,fields,q)
-            cl_noise[2:,0,0]=nl[:lmax-1]
+            ell,nl=get_lensing_noise(larrb,cl_fid,nl_fid,fields,q)
+            nlb=np.zeros(len(nl)+2); nlb[2:]=nl[:]; nlb[:2]=nl[0]
+            cl_noise[:,0,0]=nlb[larr]
         elif tr1.tracer_type=='cmb_primary' :
             sigma2_rad_t=(tr1.sigma_t/(2.725*1E6*180*60/np.pi))**2
             sigma2_rad_p=(tr1.sigma_p/(2.725*1E6*180*60/np.pi))**2
             beam_rad=tr1.beam_amin*np.pi/(180*60)/(2*np.sqrt(2*np.log(2)))
-            l=np.arange(lmax+1)
             ltr=tr1.l_transition
+            i_below=np.where(larr<tr1.l_transition)[0] ; l_below=larr[i_below]
+            i_above=np.where(larr>=tr1.l_transition)[0]; l_above=larr[i_above]
             if tr1.has_t :
-                cl_noise[:ltr,0,0]=(sigma2_rad_t[0]*np.exp(l*(l+1)*beam_rad[0]**2))[:ltr]
-                cl_noise[ltr:,0,0]=(sigma2_rad_t[1]*np.exp(l*(l+1)*beam_rad[1]**2))[ltr:]
+                cl_noise[i_below,0,0]=sigma2_rad_t[0]*np.exp(l_below*(l_below+1)*beam_rad[0]**2)
+                cl_noise[i_above,0,0]=sigma2_rad_t[1]*np.exp(l_above*(l_above+1)*beam_rad[1]**2)
                 if tr1.has_p :
-                    cl_noise[:ltr,1,1]=(sigma2_rad_p[0]*np.exp(l*(l+1)*beam_rad[0]**2))[:ltr]
-                    cl_noise[:ltr,2,2]=(sigma2_rad_p[0]*np.exp(l*(l+1)*beam_rad[0]**2))[:ltr]
-                    cl_noise[ltr:,1,1]=(sigma2_rad_p[1]*np.exp(l*(l+1)*beam_rad[1]**2))[ltr:]
-                    cl_noise[ltr:,2,2]=(sigma2_rad_p[1]*np.exp(l*(l+1)*beam_rad[1]**2))[ltr:]
+                    cl_noise[i_below,1,1]=sigma2_rad_p[0]*np.exp(l_below*(l_below+1)*beam_rad[0]**2)
+                    cl_noise[i_below,2,2]=sigma2_rad_p[0]*np.exp(l_below*(l_below+1)*beam_rad[0]**2)
+                    cl_noise[i_above,1,1]=sigma2_rad_p[1]*np.exp(l_above*(l_above+1)*beam_rad[1]**2)
+                    cl_noise[i_above,2,2]=sigma2_rad_p[1]*np.exp(l_above*(l_above+1)*beam_rad[1]**2)
             elif tr1.has_p :
-                cl_noise[:ltr,0,0]=(sigma2_rad_p[0]*np.exp(l*(l+1)*beam_rad[0]**2))[:ltr]
-                cl_noise[:ltr,1,1]=(sigma2_rad_p[0]*np.exp(l*(l+1)*beam_rad[0]**2))[:ltr]
-                cl_noise[ltr:,0,0]=(sigma2_rad_p[1]*np.exp(l*(l+1)*beam_rad[1]**2))[ltr:]
-                cl_noise[ltr:,1,1]=(sigma2_rad_p[1]*np.exp(l*(l+1)*beam_rad[1]**2))[ltr:]
+                cl_noise[i_below,0,0]=sigma2_rad_p[0]*np.exp(l_below*(l_below+1)*beam_rad[0]**2)
+                cl_noise[i_below,1,1]=sigma2_rad_p[0]*np.exp(l_below*(l_below+1)*beam_rad[0]**2)
+                cl_noise[i_above,0,0]=sigma2_rad_p[1]*np.exp(l_above*(l_above+1)*beam_rad[1]**2)
+                cl_noise[i_above,1,1]=sigma2_rad_p[1]*np.exp(l_above*(l_above+1)*beam_rad[1]**2)
         else :
             strout="Wrong tracer type "+tr1.tracer_type+"\n"
             strout+="Allowed tracer types are: gal_clustering, intensity_mapping, "

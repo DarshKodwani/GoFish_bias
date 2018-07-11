@@ -203,10 +203,22 @@ def read_cls_class(fname) :
 def read_cls(par,fname) :
     return read_cls_class(fname)
 
-def write_class_param_file(par,param_vary,sign_vary,prefix_out) :
+def add_fdiff(val,dval,sig,osd) :
+    if osd==0 :
+        return val+sig*dval
+    else :
+        return val+osd*(1.5+0.5*sig)*dval
+
+def write_class_param_file(par,param_vary,sign_vary,prefix_out,write_full=True,a_s_rescale=1.) :
     """ Generates CLASS param file """
-    och2,doch2,osid_och2=par.get_param_properties("och2")
-    obh2,dobh2,osid_obh2=par.get_param_properties("obh2")
+    if par.use_cmb_params :
+        och2,doch2,osid_och2=par.get_param_properties("och2")
+        obh2,dobh2,osid_obh2=par.get_param_properties("obh2")
+        a_s,da_s,osid_a_s=par.get_param_properties("A_s")
+    else :
+        om,dom,osid_om=par.get_param_properties("om")
+        ob,dob,osid_ob=par.get_param_properties("ob")
+        s8,ds8,osid_s8=par.get_param_properties("s8")
     hh,dhh,osid_hh=par.get_param_properties("hh")
     if par.model=='JBD' :
         obd,dobd,osid_obd=par.get_param_properties("obd")
@@ -230,7 +242,6 @@ def write_class_param_file(par,param_vary,sign_vary,prefix_out) :
         m2i,dm2i,osid_m2i=par.get_param_properties("m2i")
         lkv,dlkv,osid_lkv=par.get_param_properties("lkv")
     ns,dns,osid_ns=par.get_param_properties("ns")
-    a_s,da_s,osid_a_s=par.get_param_properties("A_s")
     tau,dtau,osid_tau=par.get_param_properties("tau")
     mnu,dmnu,osid_mnu=par.get_param_properties("mnu")
     pan,dpan,osid_pan=par.get_param_properties("pan")
@@ -238,6 +249,25 @@ def write_class_param_file(par,param_vary,sign_vary,prefix_out) :
     rt,drt,osid_rt=par.get_param_properties("rt")
     lmcb,dlmcb,osid_lmcb=par.get_param_properties("lmcb")
     etab,detab,osid_etab=par.get_param_properties("etab")
+
+    #val,dval,osid=par.get_param_properties(param_vary)
+
+    if par.use_cmb_params :
+        if param_vary=="och2" :
+            och2=add_fdiff(och2,doch2,sign_vary,osid_och2)
+        if param_vary=="obh2" :
+            obh2=add_fdiff(obh2,dobh2,sign_vary,osid_obh2)
+        if param_vary=="A_s" :
+            a_s=add_fdiff(a_s,da_s,sign_vary,osid_a_s)
+    else :
+        if param_vary=="om" :
+            om=add_fdiff(om,dom,sign_vary,osid_om)
+        if param_vary=="ob" :
+            ob=add_fdiff(ob,dob,sign_vary,osid_ob)
+        a_s=2.1*a_s_rescale**2
+        if param_vary=="s8" :
+            s8=add_fdiff(s8,ds8,sign_vary,osid_s8)
+=======
     lksb,dlksb,osid_lksb=par.get_param_properties("lksb")
 #    val,dval,osid=par.get_param_properties(param_vary)
 
@@ -251,6 +281,7 @@ def write_class_param_file(par,param_vary,sign_vary,prefix_out) :
         och2=add_fdiff(och2,doch2,sign_vary,osid_och2)
     if param_vary=="obh2" :
         obh2=add_fdiff(obh2,dobh2,sign_vary,osid_obh2)
+
     if param_vary=="hh" :
         hh=add_fdiff(hh,dhh,sign_vary,osid_hh)
     if par.model=='JBD' :
@@ -298,8 +329,6 @@ def write_class_param_file(par,param_vary,sign_vary,prefix_out) :
             lkv=add_fdiff(lkv,dlkv,sign_vary,osid_lkv)
     if param_vary=="ns" :
         ns=add_fdiff(ns,dns,sign_vary,osid_ns)
-    if param_vary=="A_s" :
-        a_s=add_fdiff(a_s,da_s,sign_vary,osid_a_s)
     if param_vary=="tau" :
         tau=add_fdiff(tau,dtau,sign_vary,osid_tau)
     if param_vary=="mnu" :
@@ -320,7 +349,13 @@ def write_class_param_file(par,param_vary,sign_vary,prefix_out) :
     if par.model=='Horndeski' :
         kv=10.**lkv
     mcb=10.**lmcb
+
+    if not par.use_cmb_params :
+        och2=(om-ob)*hh**2
+        obh2=ob*hh**2
+=======
     ksb=10.**lksb
+
 
     nuisance_name,tr_name,inode=my_parser(param_vary)
 
@@ -396,14 +431,15 @@ def write_class_param_file(par,param_vary,sign_vary,prefix_out) :
             n_tracers_wl+=1
 
     spectra_list="mPk"
-    if par.has_gal_clustering==True :
-        spectra_list+=", nCl"
-    if par.has_gal_shear==True :
-        spectra_list+=", sCl"
-    if (par.has_cmb_lensing==True) or (par.has_cmb_t==True) or (par.has_cmb_p==True) :
-        spectra_list+=", lCl"
-    if (par.has_cmb_t==True) or (par.has_cmb_p==True) or (par.has_cmb_lensing==True) :
-        spectra_list+=", tCl, pCl"
+    if write_full :
+        if par.has_gal_clustering==True :
+            spectra_list+=", nCl"
+        if par.has_gal_shear==True :
+            spectra_list+=", sCl"
+        if (par.has_cmb_lensing==True) or (par.has_cmb_t==True) or (par.has_cmb_p==True) :
+            spectra_list+=", lCl"
+        if (par.has_cmb_t==True) or (par.has_cmb_p==True) or (par.has_cmb_lensing==True) :
+            spectra_list+=", tCl, pCl"
 
     strout="#CLASS param file by GoFish\n"
     strout+="h = %lE\n"%hh
@@ -491,9 +527,12 @@ def write_class_param_file(par,param_vary,sign_vary,prefix_out) :
             strout+="k_star = %lE\n"%ksb
         else :
             strout+="non linear = halofit\n"
-    if (par.has_cmb_lensing==True) or (par.has_cmb_t==True) or (par.has_cmb_p==True) :
-        strout+="modes = s, t\n"
-        strout+="lensing = yes\n"
+    if write_full :
+        if (par.has_cmb_lensing==True) or (par.has_cmb_t==True) or (par.has_cmb_p==True) :
+            strout+="modes = s, t\n"
+            strout+="lensing = yes\n"
+        else :
+            strout+="modes = s\n"
     else :
         strout+="modes = s\n"
     strout+="ic = ad\n"
@@ -608,6 +647,17 @@ def bao_is_there(par,par_vary,sign_vary,printout) :
     else :
         return True
 
+def get_As_scaling(par,par_vary,sign_vary) :
+    s8,ds8,osid_s8=par.get_param_properties("s8")
+    if par_vary=="s8" :
+        s8=add_fdiff(s8,ds8,sign_vary,osid_s8)
+    prefix_all=get_prefix(par,par_vary,sign_vary)
+    write_class_param_file(par,par_vary,sign_vary,prefix_all,write_full=False)
+    os.system("./class_mod "+prefix_all+"_param.ini > "+prefix_all+".log")
+    f=open(prefix_all+".log").read()
+    s8_read=float(f[f.find('sigma')+7:f.find('sigma')+18])
+    return s8/s8_read
+    
 def start_running(par,par_vary,sign_vary) :
     """ Start running CLASS if the files aren't there """
     checkvar=False
@@ -620,9 +670,13 @@ def start_running(par,par_vary,sign_vary) :
         return True
     else :
         print "     Computing"
+        if par.use_cmb_params :
+            as_scale=1.
+        else :
+            as_scale=get_As_scaling(par,par_vary,sign_vary)
         prefix_all=get_prefix(par,par_vary,sign_vary)
-        write_class_param_file(par,par_vary,sign_vary,prefix_all)
-        os.system(par.exec_path+" "+prefix_all+"_param.ini ")
+        write_class_param_file(par,par_vary,sign_vary,prefix_all,a_s_rescale=as_scale)
+        os.system(par.exec_path+" "+prefix_all+"_param.ini")
         return False
 
 def get_bao(par,par_vary,sign_vary) :
@@ -705,7 +759,7 @@ def get_cls_from_name(par,clf_total,clf_lensed,read_lensed=True,par_vary="none",
         cl_ll[:,bin_idx,:] *= (1+m)
         cl_ll[:,bin_idx,bin_idx] /= (1+m) # To avoid scaling twice
 
-    cl_ret=np.zeros([par.lmax+1,par.nbins_total,par.nbins_total])
+    cl_ret=np.zeros([par.n_ell,par.nbins_total,par.nbins_total])
 
     nb1_sofar=0
     nbd1_sofar=0
@@ -730,42 +784,42 @@ def get_cls_from_name(par,clf_total,clf_lensed,read_lensed=True,par_vary="none",
             if tr1.consider_tracer and tr2.consider_tracer :
                 if (tr1.tracer_type=="cmb_primary") and (tr2.tracer_type=="cmb_primary") : #cc
                     if (tr1.has_t==True) and (tr1.has_p==False) :
-                        cl_ret[lmn:lmx+1,nb1_sofar+0,nb2_sofar+0]=cl_tt[lmn:lmx+1]
+                        cl_ret[:,nb1_sofar+0,nb2_sofar+0]=cl_tt[par.larr]
                     if (tr1.has_t==False) and (tr1.has_p==True) :
-                        cl_ret[lmn:lmx+1,nb1_sofar+0,nb2_sofar+0]=cl_ee[lmn:lmx+1]
-                        cl_ret[lmn:lmx+1,nb1_sofar+1,nb2_sofar+1]=cl_bb[lmn:lmx+1]
+                        cl_ret[:,nb1_sofar+0,nb2_sofar+0]=cl_ee[par.larr]
+                        cl_ret[:,nb1_sofar+1,nb2_sofar+1]=cl_bb[par.larr]
                     if (tr1.has_t==True) and (tr1.has_p==True) :
-                        cl_ret[lmn:lmx+1,nb1_sofar+0,nb2_sofar+0]=cl_tt[lmn:lmx+1]
-                        cl_ret[lmn:lmx+1,nb1_sofar+0,nb2_sofar+1]=cl_te[lmn:lmx+1]
-                        cl_ret[lmn:lmx+1,nb1_sofar+1,nb2_sofar+0]=cl_te[lmn:lmx+1]
-                        cl_ret[lmn:lmx+1,nb1_sofar+1,nb2_sofar+1]=cl_ee[lmn:lmx+1]
-                        cl_ret[lmn:lmx+1,nb1_sofar+2,nb2_sofar+2]=cl_bb[lmn:lmx+1]
+                        cl_ret[:,nb1_sofar+0,nb2_sofar+0]=cl_tt[par.larr]
+                        cl_ret[:,nb1_sofar+0,nb2_sofar+1]=cl_te[par.larr]
+                        cl_ret[:,nb1_sofar+1,nb2_sofar+0]=cl_te[par.larr]
+                        cl_ret[:,nb1_sofar+1,nb2_sofar+1]=cl_ee[par.larr]
+                        cl_ret[:,nb1_sofar+2,nb2_sofar+2]=cl_bb[par.larr]
                 if (tr1.tracer_type=="cmb_lensing") and (tr2.tracer_type=="cmb_lensing") : #pp
-                    cl_ret[lmn:lmx+1,nb1_sofar,nb2_sofar]=cl_pp[lmn:lmx+1]
+                    cl_ret[:,nb1_sofar,nb2_sofar]=cl_pp[par.larr]
                 if (tr1.tracer_type=="cmb_lensing") and (tr2clust) : #pd
-                    cl_ret[lmn:lmx+1,nb1_sofar,nb2_sofar:nb2_sofar+nb2]=cl_pd[lmn:lmx+1,nbd2_sofar:nbd2_sofar+nb2]
+                    cl_ret[:,nb1_sofar,nb2_sofar:nb2_sofar+nb2]=cl_pd[par.larr,:][:,nbd2_sofar:nbd2_sofar+nb2]
                 if (tr1clust) and (tr2.tracer_type=="cmb_lensing") : #dp
-                    cl_ret[lmn:lmx+1,nb1_sofar:nb1_sofar+nb1,nb2_sofar]=cl_pd[lmn:lmx+1,nbd1_sofar:nbd1_sofar+nb1]
+                    cl_ret[:,nb1_sofar:nb1_sofar+nb1,nb2_sofar]=cl_pd[par.larr,:][:,nbd1_sofar:nbd1_sofar+nb1]
                 if (tr1.tracer_type=="cmb_lensing") and (tr2.tracer_type=="gal_shear") : #pl
-                    cl_ret[lmn:lmx+1,nb1_sofar,nb2_sofar:nb2_sofar+nb2]=cl_pl[lmn:lmx+1,nbl2_sofar:nbl2_sofar+nb2]
+                    cl_ret[:,nb1_sofar,nb2_sofar:nb2_sofar+nb2]=cl_pl[par.larr,:][:,nbl2_sofar:nbl2_sofar+nb2]
                 if (tr1.tracer_type=="gal_shear") and (tr2.tracer_type=="cmb_lensing") : #lp
-                    cl_ret[lmn:lmx+1,nb1_sofar:nb1_sofar+nb1,nb2_sofar]=cl_pl[lmn:lmx+1,nbl1_sofar:nbl1_sofar+nb1]
+                    cl_ret[:,nb1_sofar:nb1_sofar+nb1,nb2_sofar]=cl_pl[par.larr,:][:,nbl1_sofar:nbl1_sofar+nb1]
                 if (tr1clust) and (tr2clust) : #dd
-                    cl_ret[lmn:lmx+1,nb1_sofar:nb1_sofar+nb1,
-                           nb2_sofar:nb2_sofar+nb2]=cl_dd[lmn:lmx+1,nbd1_sofar:nbd1_sofar+nb1,
-                                                          nbd2_sofar:nbd2_sofar+nb2]
+                    cl_ret[:,nb1_sofar:nb1_sofar+nb1,
+                           nb2_sofar:nb2_sofar+nb2]=cl_dd[par.larr,:,:][:,nbd1_sofar:nbd1_sofar+nb1,
+                                                                        nbd2_sofar:nbd2_sofar+nb2]
                 if (tr1clust) and (tr2.tracer_type=="gal_shear") : #dl
-                    cl_ret[lmn:lmx+1,nb1_sofar:nb1_sofar+nb1,
-                             nb2_sofar:nb2_sofar+nb2]=cl_dl[lmn:lmx+1,nbd1_sofar:nbd1_sofar+nb1,
-                                                             nbl2_sofar:nbl2_sofar+nb2]
+                    cl_ret[:,nb1_sofar:nb1_sofar+nb1,
+                             nb2_sofar:nb2_sofar+nb2]=cl_dl[par.larr,:,:][:,nbd1_sofar:nbd1_sofar+nb1,
+                                                                          nbl2_sofar:nbl2_sofar+nb2]
                 if (tr1.tracer_type=="gal_shear") and (tr2clust) : #ld
-                    cl_ret[lmn:lmx+1,nb1_sofar:nb1_sofar+nb1,
-                             nb2_sofar:nb2_sofar+nb2]=np.transpose(cl_dl[lmn:lmx+1,nbd2_sofar:nbd2_sofar+nb2,
-                                                                          nbl1_sofar:nbl1_sofar+nb1],axes=(0,2,1))
+                    cl_ret[:,nb1_sofar:nb1_sofar+nb1,
+                             nb2_sofar:nb2_sofar+nb2]=np.transpose(cl_dl[par.larr,:,:][:,nbd2_sofar:nbd2_sofar+nb2,
+                                                                                       nbl1_sofar:nbl1_sofar+nb1],axes=(0,2,1))
                 if (tr1.tracer_type=="gal_shear") and (tr2.tracer_type=="gal_shear") : #ll
-                    cl_ret[lmn:lmx+1,nb1_sofar:nb1_sofar+nb1,
-                             nb2_sofar:nb2_sofar+nb2]=cl_ll[lmn:lmx+1,nbl1_sofar:nbl1_sofar+nb1,
-                                                             nbl2_sofar:nbl2_sofar+nb2]
+                    cl_ret[:,nb1_sofar:nb1_sofar+nb1,
+                             nb2_sofar:nb2_sofar+nb2]=cl_ll[par.larr,:,:][:,nbl1_sofar:nbl1_sofar+nb1,
+                                                                          nbl2_sofar:nbl2_sofar+nb2]
             if tr2clust :
                 nbd2_sofar+=nb2
             if tr2.tracer_type=="gal_shear" :

@@ -1,0 +1,115 @@
+import numpy as np
+from scipy.interpolate import interp1d
+from scipy.integrate import quad
+
+ndensy1=10.
+ndensy10=27.
+zlims_y1=np.array([[0.000000e+00 ,3.534999e-01],
+                   [3.534999e-01 ,5.494998e-01],
+                   [5.494998e-01 ,7.734997e-01],
+                   [7.734997e-01 ,1.111250e+00],
+                   [1.111250e+00 ,3.499999e+00]])
+zlims_y10=[]
+for zl in zlims_y1 :
+    zlims_y10.append([zl[0],0.5*(zl[0]+zl[1])])
+    zlims_y10.append([0.5*(zl[0]+zl[1]),zl[1]])
+zlims_y10=np.array(zlims_y10)
+
+szarr_y1=(1+np.mean(zlims_y1,axis=1))*0.05
+szarr_y10=(1+np.mean(zlims_y10,axis=1))*0.05
+lmax_arr_y1=np.ones_like(szarr_y1)*3000
+lmax_arr_y10=np.ones_like(szarr_y10)*3000
+larr=np.array([2.359970e+01,
+               3.285940e+01,
+               4.575227e+01,
+               6.370386e+01,
+               8.869901e+01,
+               1.235014e+02,
+               1.719590e+02,
+               2.394297e+02,
+               3.333735e+02,
+               4.641775e+02,
+               6.463045e+02,
+               8.998917e+02,
+               1.252978e+03,
+               1.744602e+03,
+               2.429122e+03,
+               3.382225e+03,
+               4.709291e+03,
+               6.557052e+03,
+               9.129808e+03,
+               1.271202e+04])
+dlogl=np.mean(np.log10(larr)[1:]-np.log10(larr)[:-1])
+larr0=10.**(np.log10(larr)-dlogl/2)
+larr1=10.**(np.log10(larr)+dlogl/2)
+idgood=np.where(larr1<3000)[0]
+larr0=(larr0[idgood]).astype(int)
+larr1=(larr1[idgood]).astype(int)
+
+zarr_long=np.linspace(0,4.5,1024)
+z0y1=0.13; alphay1=0.78
+z0y10=0.11; alphay10=0.68
+def nzpar(z,z0,alpha) :
+    return z**2*np.exp(-(z/z0)**alpha)
+zi,zm,zf,nz=np.loadtxt("nzSRDss.txt",unpack=True)
+nzy1=nzpar(zm,z0y1,alphay1)/quad(nzpar,0,5,args=(z0y1,alphay1))[0]
+nzf=interp1d(zm,nzy1,bounds_error=False,fill_value=0); norm=quad(nzf,0,4)[0];
+nzy1=nzf(zarr_long)*ndensy1/norm
+nzf=interp1d(zarr_long,nzy1,bounds_error=False,fill_value=0); print quad(nzf,0,4)[0]
+
+nzy10=nzpar(zm,z0y10,alphay10)/quad(nzpar,0,5,args=(z0y10,alphay10))[0]
+nzf=interp1d(zm,nzy10,bounds_error=False,fill_value=0); norm=quad(nzf,0,4)[0];
+nzy10=nzf(zarr_long)*ndensy10/norm
+nzf=interp1d(zarr_long,nzy10,bounds_error=False,fill_value=0); print quad(nzf,0,4)[0]
+
+import matplotlib.pyplot as plt
+plt.plot(zarr_long,nzy1)
+plt.plot(zarr_long,nzy10)
+plt.show()
+
+ib1a,ib2a,icov=np.loadtxt('LSST_Y1_3x2pt_cluster_1.000000e+01_1.800000e+04_Ncl20_cov_shear_inv',unpack=True)
+nell=len(larr0)
+nell0=len(larr)
+nbins=len(zlims_y1)
+nel=nell*((nbins*(nbins+1))/2)
+icovsave=np.zeros([nel,nel])
+irow=0
+iel1=0
+iel01=0
+for i1 in np.arange(nbins) :
+    for j1 in np.arange(i1,nbins) :
+        for l1 in np.arange(nell0) :
+            if l1<nell :
+                i1good=1
+            else :
+                i1good=0
+            
+            iel2=0
+            iel02=0
+            for i2 in np.arange(nbins) :
+                for j2 in np.arange(i2,nbins) :
+                    for l2 in np.arange(nell0) :
+                        if l2<nell :
+                            i2good=1
+                        else :
+                            i2good=0
+
+                        if i1good and i2good :
+                            icovsave[iel1,iel2]=icov[irow]
+                        if (i1good*i2good==0) and (ib1a[irow]!=ib2a[irow]) and icov[irow]!=0 :
+                            print irow,l1,l2,ib1a[irow],ib2a[irow],icov[irow]
+                            exit(1)
+                        irow+=1
+                        if i2good :
+                            iel2+=1
+                        iel02+=1
+            if i1good :
+                iel1+=1
+            iel01+=1
+
+np.savez("icov_y1",icov=icovsave)
+np.savetxt("nz_shear_y1.txt",np.transpose([zarr_long,nzy1]))
+np.savetxt("nz_shear_y10.txt",np.transpose([zarr_long,nzy10]))
+np.savetxt("bins_shear_y1.txt",np.transpose([zlims_y1[:,0],zlims_y1[:,1],szarr_y1,lmax_arr_y1]),fmt='%.5lf %.5lf %.5lf 0 0 %d',header=' [0]z0 [1]zf [2]sigma_z [3]marg_sz [4]marg_bz [5]lmax')
+np.savetxt("bins_shear_y10.txt",np.transpose([zlims_y10[:,0],zlims_y10[:,1],szarr_y10,lmax_arr_y10]),fmt='%.5lf %.5lf %.5lf 0 0 %d',header=' [0]z0 [1]zf [2]sigma_z [3]marg_sz [4]marg_bz [5]lmax')
+np.savetxt("larr.txt",np.transpose([larr0,larr1]),fmt='%d %d')

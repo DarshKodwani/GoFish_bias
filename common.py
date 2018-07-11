@@ -1,3 +1,4 @@
+import pyccl as ccl
 import numpy as np
 import matplotlib.pyplot as plt
 import in_out as ino
@@ -12,6 +13,24 @@ import time
 fs=16
 lw=2
 
+
+PARS_LCDM_CMB={'och2':[0.1197 ,0.001 , 0,'$\\omega_c$'],
+               'obh2':[0.02222,0.0001, 0,'$\\omega_b$'],
+               'A_s' :[2.19   ,0.01  , 0,'$A_s$']}
+PARS_LCDM_NOCMB={'om'  :[0.3156 ,0.002 , 0,'$\\Omega_m$'],
+                 'ob'  :[0.0492 ,0.0002, 0,'$\\Omega_b$'],
+                 's8'  :[0.831  ,0.01  , 0,'$\\sigma_8$']}
+PARS_LCDM_REST={'hh'  :[0.6727 ,0.01  , 0,'$h$'],
+                'ns'  :[0.9645 ,0.01  , 0,'$n_s$'],
+                'tau' :[0.06   ,0.005 , 0,'$\\tau$'],
+                'mnu' :[60.0   ,5.0   , 0,'$\\sum m_\\nu$'],
+                'nnu' :[2.046  ,0.1   , 0,'$\\rm{N_{eff}}$'],
+                'pan' :[0.00   ,0.5   , 1,'$p_{\\rm ann}$'],
+                'fnl' :[0.00   ,0.5   , 0,'$f_{\\rm NL}$'],
+                'rt'  :[0.00   ,0.001 , 1,'$r$'],
+                'lmcb':[14.08  ,0.3   , 0,'$\\log_{10}M_b$'],
+                'etab':[0.5    ,0.1   , 0,'$\\eta_b$']}
+=======
 PARS_LCDM={'och2':[0.1197 ,0.001 , 0,'$\\omega_c$'],
            'obh2':[0.02222,0.0001, 0,'$\\omega_b$'],
            'hh'  :[0.67   ,0.01  , 0,'$h$'],
@@ -26,6 +45,7 @@ PARS_LCDM={'och2':[0.1197 ,0.001 , 0,'$\\omega_c$'],
            'lmcb':[14.08  ,0.3   , 0,'$\\log_{10}M_b$'],
            'etab':[0.5    ,0.1   , 0,'$\\eta_b$'],
            'lksb':[1.7404 ,0.2   , 0,'$\\log_{10}k_s$']}
+
 
 PARS_WCDM={'w0'  :[-1.00  ,0.01  , 1,'$w_0$'],
            'wa'  :[0.00   ,0.01  , 1,'$w_a$'],
@@ -51,15 +71,35 @@ PARS_HORN={'bk'  :[ 0.00  ,0.05  , 1,'$b_K$'],
 LMAX=10000
 LMAX_CMB=10000
 
+
+class GaussSt(object):
+=======
 NLB=1
 
 class GaussSt(object) :
+
     def __init__(self,nmaps) :
         self.nmaps=nmaps
         self.nvec=(self.nmaps*(self.nmaps+1))/2
         self.ind_2d=np.zeros([self.nvec,2],dtype=int)
         id1d=0
         for i in np.arange(self.nmaps) :
+
+            for j in np.arange(i,self.nmaps) :
+                self.ind_2d[id1d,:]=[i,j]
+#            for j in np.arange(self.nmaps-i) :
+#                self.ind_2d[id1d,:]=[j,i+j]
+                id1d+=1
+    def gaussian_covariance(self,mat,weight) :
+        covar=np.zeros([self.nvec,self.nvec])
+        for iv1 in np.arange(self.nvec) :
+            i_a=self.ind_2d[iv1,0]; i_b=self.ind_2d[iv1,1];
+            for iv2 in np.arange(iv1,self.nvec) : 
+                i_c=self.ind_2d[iv2,0]; i_d=self.ind_2d[iv2,1];
+                covar[iv1,iv2]=mat[i_a,i_c]*mat[i_b,i_d]+mat[i_a,i_d]*mat[i_b,i_c]
+                if iv1!=iv2 :
+                    covar[iv2,iv1]=covar[iv1,iv2]
+=======
             for j in np.arange(self.nmaps-i) :
                 self.ind_2d[id1d,:]=[j,i+j]
                 id1d+=1
@@ -71,24 +111,46 @@ class GaussSt(object) :
             for iv2 in np.arange(self.nvec) :
                 i_c=self.ind_2d[iv2,0]; i_d=self.ind_2d[iv2,1]; 
                 covar[iv1,iv2]=(mat[i_a,i_c]*mat[i_b,i_d]+mat[i_a,i_d]*mat[i_b,i_c])
+
         covar*=weight
         return covar
 
     def unwrap_matrix(self,mat) :
+
+        return mat[self.ind_2d[:,0],self.ind_2d[:,1]].flatten()
+
+    def gaussian_covariance_full(self,mat,ell_weights) :
+        nell=len(ell_weights)
+        covar=np.zeros([self.nvec*nell,self.nvec*nell])
+        for iv1 in np.arange(self.nvec) :
+            i_a=self.ind_2d[iv1,0]; i_b=self.ind_2d[iv1,1];
+            for iv2 in np.arange(iv1,self.nvec) : 
+                i_c=self.ind_2d[iv2,0]; i_d=self.ind_2d[iv2,1];
+                covar_block=np.diag((mat[:,i_a,i_c]*mat[:,i_b,i_d]+mat[:,i_a,i_d]*mat[:,i_b,i_c])*ell_weights)
+                covar[iv1*nell:(iv1+1)*nell,iv2*nell:(iv2+1)*nell]=covar_block
+                if iv1!=iv2 :
+                    covar[iv2*nell:(iv2+1)*nell,iv1*nell:(iv1+1)*nell]=covar_block
+        return covar
+        
+=======
         return np.array([mat[ind[0],ind[1]] for ind in self.ind_2d])
 
 
     
+
 class ParamRun:
     """ Run parameters """
     #Cosmological parameters
     params_all=[] #
 
     #Run parameters
+    fname_bpws='none'
     lmax=LMAX #
     lmax_lss=LMAX #
     lmax_cmb=LMAX_CMB
+    n_ell=LMAX+1
     lmin_limber=LMAX #
+    larr=np.arange(LMAX+1)
     has_gal_clustering=False
     has_gal_shear=False
     has_cmb_lensing=False
@@ -117,7 +179,14 @@ class ParamRun:
 
     #Behavioral flags
     model='LCDM' #
+
+    fisher_formalism='pspec_full' #
+    icovar_ext_file='none' #
+    include_SSC=False
+    use_cmb_params=True #
+=======
     do_pspec_fisher=False #
+
     save_cl_files=True #
     save_param_files=True #
     save_dbg_files=False
@@ -158,10 +227,16 @@ class ParamRun:
     dcl_arr=[]
     #Power spectrum from bias file
     cl_mod_arr=[]
-
+    #inverse covariance
+    dcov_full=[]
+    covm_full=[]
+    covp_full=[]
     #Fisher param structure
-    params_fshr=[] #
+    params_fshr=[] 
 
+    #Darsh start : bias stuff
+    w_bias_vector = []
+    
     #Number of parameters to vary
     npar_vary=0
 
@@ -186,7 +261,15 @@ class ParamRun:
         if (self.has_gal_shear==False) and (self.has_gal_clustering==False) :
             self.lmax_lss=0
         self.lmax=max(self.lmax_lss,self.lmax_cmb)
-        self.lmax=NLB*((self.lmax+1)/NLB)-1
+        if self.fname_bpws!='none' :
+            l1arr,l2arr=np.loadtxt(self.fname_bpws,dtype=int,unpack=True)
+            self.larr=(l1arr+l2arr)/2
+            self.d_larr=l2arr-l1arr
+            self.lmax=max(self.lmax,l2arr[-1])
+        else :
+            self.larr=np.arange(self.lmax+1)
+            self.d_larr=np.ones(self.lmax+1)
+        self.n_ell=len(self.larr)
 
         #List parameters to vary over
         self.npar_vary=0
@@ -196,6 +279,7 @@ class ParamRun:
                                                         p.label,p.isfree,p.do_plot,p.onesided))
                 self.npar_vary+=1
         self.params_fshr=np.array(self.params_fshr)
+        print " MUMBER OF PARAMETERS TO VARY!", self.npar_vary, self.params_fshr
 
         #Read bins information for each tracer
         self.nbins_total=0
@@ -270,27 +354,94 @@ class ParamRun:
             self.terms_gc+=", gr1, gr2, gr3, gr4, gr5"
 
         #Allocate power spectra
-        self.cl_fid_arr=np.zeros([(self.lmax+1)/NLB,
+        self.cl_fid_arr=np.zeros([self.n_ell,
                                   self.nbins_total,self.nbins_total])
-        self.cl_noise_arr=np.zeros([(self.lmax+1)/NLB,
+        self.cl_noise_arr=np.zeros([self.n_ell,
                                     self.nbins_total,self.nbins_total])
-        self.dcl_arr=np.zeros([self.npar_vary+self.npar_mbias,(self.lmax+1)/NLB,
+        self.dcl_arr=np.zeros([self.npar_vary+self.npar_mbias,self.n_ell,
                                self.nbins_total,self.nbins_total])
+        #Darsh start: Derivative of inverse covarince wrt parameters
+        self.dcov_full=np.zeros([self.npar_vary+self.npar_mbias,(self.nbins_total*(self.nbins_total+1)/2)*self.n_ell, (self.nbins_total*(self.nbins_total+1)/2)*self.n_ell])
+        #Darsh start : Bias stuff
+        self.w_bias_vector = np.zeros([self.npar_vary+self.npar_mbias, (self.nbins_total*(self.nbins_total+1)/2)*self.n_ell])
+        self.pdcm_bias_v = np.zeros([self.npar_vary + self.npar_mbias, self.npar_vary + self.npar_mbias, self.npar_vary + self.npar_mbias])
+        #Darsh end
 
         # Allocate power spectrum from additional bias file 
-        self.cl_mod_arr=np.zeros([(self.lmax+1)/NLB,self.nbins_total,self.nbins_total])
+        self.cl_mod_arr=np.zeros([self.n_ell,self.nbins_total,self.nbins_total])
 
         #Allocate Fisher matrix
-        self.fshr_l=np.zeros([self.npar_vary+self.npar_mbias,self.npar_vary+self.npar_mbias,self.lmax+1])
+        self.fshr_l=np.zeros([self.npar_vary+self.npar_mbias,self.npar_vary+self.npar_mbias,self.n_ell])
+        self.fshr_cls_PI=np.zeros([self.npar_vary+self.npar_mbias,self.npar_vary+self.npar_mbias])
+        self.fshr_cls_PD=np.zeros([self.npar_vary+self.npar_mbias,self.npar_vary+self.npar_mbias])
         self.fshr_cls=np.zeros([self.npar_vary+self.npar_mbias,self.npar_vary+self.npar_mbias])
         self.fshr_bao=np.zeros([self.npar_vary+self.npar_mbias,self.npar_vary+self.npar_mbias])
         self.fshr_prior=np.zeros([self.npar_vary+self.npar_mbias,self.npar_vary+self.npar_mbias])
         self.fshr=np.zeros([self.npar_vary+self.npar_mbias,self.npar_vary+self.npar_mbias])
 
-        self.fshr_bias_l=np.zeros([self.npar_vary+self.npar_mbias,self.lmax+1])
+        self.fshr_bias_l=np.zeros([self.npar_vary+self.npar_mbias,self.n_ell])
         self.fshr_bias  =np.zeros([self.npar_vary+self.npar_mbias])
 
         self.print_params()
+        #Darsh test start
+        #cosmo_ = ccl.Cosmology(Omega_c=0.27, Omega_b=0.045, h=0.67, A_s=2.1e-9, n_s=0.96, N_nu_rel=3.046, Omega_k=0.)
+        #tr1_ids=[0,0,0]
+        #tr2_ids=[0,0,0]
+        #bn1_ids=[0,0,1]
+        #bn2_ids=[0,1,1]
+        #print "SHAPE OF SSC", np.shape(trc.SSC(cosmo,np.array(self.tracers),tr1_ids,tr2_ids,bn1_ids,bn2_ids,self.larr,self.fsky))
+        #Darsh test end
+
+    def get_inverse_covariance(self,pname,pname_val,pname_dval,sign,cosmo_dictionary,gst,invert=True, cls_for_gauss=None) :
+        if cls_for_gauss is None :
+            cls4gauss=self.cl_fid_arr.copy()
+        else :
+            cls4gauss=cls_for_gauss.copy()
+        cls4gauss+=self.cl_noise_arr
+
+        nell=len(self.cl_fid_arr)
+        nel=nell*(self.nbins_total*(self.nbins_total+1))/2
+        if (self.icovar_ext_file is None) or (self.icovar_ext_file=='none') :
+            weight=1./(self.d_larr*self.fsky*(2*self.larr+1.))
+            cov=gst.gaussian_covariance_full(cls4gauss,weight)
+            #np.savez("/users/dkodwani/Software/CCL/GoFish_SSC2/Compare_cov/Gauss_cov_larrquad", cov)
+            #print "Max value of gaussian cov", np.amax(cov)
+            #plt.figure()
+            #plt.imshow(cov)
+            #plt.show()
+            if self.include_SSC:
+                print "SSC included"
+                list_tracers=[]
+                list_bins=[]
+                for i,tr in enumerate(self.tracers) :
+                    for n in np.arange(tr.get_nbins()) :
+                        list_tracers.append(i)
+                        list_bins.append(n)
+                list_tracers=np.array(list_tracers)
+                list_bins=np.array(list_bins)
+                tr1_ids=gst.unwrap_matrix(np.tile(list_tracers,(self.nbins_total,1)).T)
+                tr2_ids=gst.unwrap_matrix(np.tile(list_tracers,(self.nbins_total,1)))
+                bn1_ids=gst.unwrap_matrix(np.tile(list_bins   ,(self.nbins_total,1)).T)
+                bn2_ids=gst.unwrap_matrix(np.tile(list_bins   ,(self.nbins_total,1)))
+                ssc_cov=trc.SSC(pname,pname_val,pname_dval,sign,cosmo_dictionary,
+                                np.array(self.tracers),tr1_ids,tr2_ids,bn1_ids,bn2_ids,
+                                self.larr,self.d_larr,self.fsky)
+                #np.savez("/users/dkodwani/Software/CCL/GoFish_SSC2/Compare_cov/Ssc_cov_larrquad",ssc_cov)
+                #print "Max value of SSC cov", np.amax(ssc_cov)
+                cov+=ssc_cov
+                print "Included SSC"
+                #plt.figure()
+                #plt.imshow(cov)
+                #plt.show()
+            if invert :
+                icov=np.linalg.inv(cov)
+            else :
+                icov=cov
+        else :
+            icov=np.load(self.icovar_ext_file)['icov']
+        if (len(icov)!=nel) or (len(icov[0])!=nel) :
+            raise ValueError("Input covariance has wrong shape")
+        return icov
 
     def print_params(self) :
         print " <><> Run parameters"
@@ -334,8 +485,19 @@ class ParamRun:
         #Behaviour parameters
         if config.has_option('Behaviour parameters','model') :
             self.model=config.get('Behaviour parameters','model')
+
+        if config.has_option('Behaviour parameters','icovar_ext_file') :
+            self.icovar_ext_file=config.get('Behaviour parameters','icovar_ext_file')
+        if config.has_option('Behaviour parameters','fisher_formalism') :
+            self.fisher_formalism=config.get('Behaviour parameters','fisher_formalism')
+        if config.has_option('Behaviour parameters','include_SSC') :
+            self.include_SSC=config.getboolean('Behaviour parameters','include_SSC')
+        if config.has_option('Behaviour parameters','use_cmb_params') :
+            self.use_cmb_params=config.getboolean('Behaviour parameters','use_cmb_params')
+=======
         if config.has_option('Behaviour parameters','do_pspec_fisher') :
             self.do_pspec_fisher=config.getboolean('Behaviour parameters','do_pspec_fisher')
+
         if config.has_option('Behaviour parameters','save_cl_files') :
             self.save_cl_files=config.getboolean('Behaviour parameters','save_cl_files')
         if config.has_option('Behaviour parameters','save_param_files') :
@@ -344,10 +506,15 @@ class ParamRun:
         if config.has_option('Behaviour parameters','just_run_cls') :
             self.just_run_cls=config.getboolean('Behaviour parameters',
                                                     'just_run_cls')
-
+        #Darsh Start
+        if config.has_option('Behaviour parameters','PICM'):
+            self.PICM=config.getboolean('Behaviour parameters', 'PICM')
+        if config.has_option('Behaviour parameters','PDCM_bias'):
+            self.PDCM_bias=config.getboolean('Behaviour parameters', 'PDCM_bias')
+        #Darsh end
         #Bias file
-        if config.has_option('Bias file','bias_file') : 
-           self.bias_file=config.get('Bias file','bias_file')
+        if config.has_option('Behaviour parameters','bias_file') : 
+           self.bias_file=config.get('Behaviour parameters','bias_file')
 
         #Cosmological parameters
         self.params_all=[]
@@ -369,8 +536,18 @@ class ParamRun:
                         isfree=config.getboolean(pname,'is_free')
                     if config.has_option(pname,'onesided') :
                         onesided=config.getint(pname,'onesided')
+
+                self.params_all.append(fsh.ParamFisher(x,dx,pname,pars[pname][3],isfree,isfree*True,onesided))
+
+        if self.use_cmb_params :
+            add_to_params(PARS_LCDM_CMB)
+        else :
+            add_to_params(PARS_LCDM_NOCMB)
+        add_to_params(PARS_LCDM_REST)
+=======
                 self.params_all.append(fsh.ParamFisher(x,dx,prior,pname,pars[pname][3],isfree,isfree*True,onesided))
         add_to_params(PARS_LCDM)
+
         if self.model=='LCDM' :
             pass
         if self.model=='wCDM' :
@@ -382,6 +559,8 @@ class ParamRun:
             add_to_params(PARS_HORN)
 
         #CLASS parameters
+        if config.has_option('CLASS parameters','bandpowers_file') :
+            self.fname_bpws=config.get('CLASS parameters','bandpowers_file')
         if config.has_option('CLASS parameters','lmax_lss') :
             self.lmax_lss=config.getint('CLASS parameters','lmax_lss')
         if config.has_option('CLASS parameters','lmax_cmb') :
@@ -455,7 +634,6 @@ class ParamRun:
         #Tracers
         if not config.has_section("Tracer 1") :
             print "The param file contains no Tracers"
-#            sys.exit("The param file must contain at least one tracer starting with Tracer 1")
         n_tracers=0
         while config.has_section("Tracer %d"%(n_tracers+1)) :
             n_tracers+=1
@@ -529,7 +707,7 @@ class ParamRun:
             if config.has_option(sec_title,'m_step') :
                 m_step_str=config.get(sec_title,'m_step')
                 m_step=float(m_step_str)
- 
+
             #Intensity mapping
             tz_file=None; dish_size=None; t_inst=None; t_total=None; n_dish=None;
             area_efficiency=None; fsky_im=None; im_type=None; base_file=None;
@@ -647,7 +825,16 @@ class ParamRun:
                 add_nuisance(tr.nuisance_rfrac)
                 add_nuisance(tr.nuisance_sphz)
                 add_nuisance(tr.nuisance_bphz)
-            
+    
+    #Darsh start: Function for creating cosmo dictionary
+    
+    def def_cosmo_dictionary(self):
+        cosmo_defualt={}
+        for par in self.params_all :
+            cosmo_defualt[par.name]=par.val
+        return cosmo_defualt
+                
+    #Darsh end
     def get_param_properties(self,parname) :
         for par in self.params_all :
             if par.name==parname :
@@ -659,6 +846,14 @@ class ParamRun:
         #Run CLASS
         allfound=True
         allfound*=ino.start_running(self,"none",0)
+        #Darsh: Defining dictionary
+        cosmo_dictionary={}
+        tp=0
+        for par in self.params_all:
+            cosmo_dictionary[par.name]=par.val
+            #cosmo_dictionary.update({par.name +"_dval":par.dval})
+            tp+=1
+        print "Cosmo dictionary", cosmo_dictionary 
         for i in np.arange(self.npar_vary) :
             pname=self.params_fshr[i].name
             if pname.startswith("im_fg") :
@@ -684,26 +879,94 @@ class ParamRun:
             time.sleep(5)
 
         print "Reading fiducial"
-        self.cl_fid_arr[:,:,:]=(ino.get_cls(self,"none",0)).reshape((self.lmax+1)/NLB,NLB,self.nbins_total,self.nbins_total).mean(axis=1)
+        #self.cl_fid_arr[:,:,:]=(ino.get_cls(self,"none",0)).reshape((self.lmax+1)/NLB,NLB,self.nbins_total,self.nbins_total).mean(axis=1)
+        gstruct=GaussSt(self.nbins_total)
+        self.cl_fid_arr[:,:,:]=ino.get_cls(self,"none",0)
         if self.bias_file!="none" :
-            self.cl_mod_arr[:,:,:]=(ino.get_cls_from_name(self,clf_total=self.bias_file,clf_lensed="none",read_lensed=False,par_vary="none")).reshape((self.lmax+1)/NLB,NLB,self.nbins_total,self.nbins_total).mean(axis=1)
-
+            self.cl_mod_arr[:,:,:]=ino.get_cls_from_name(self,clf_total=self.bias_file,clf_lensed="none",read_lensed=False,par_vary="none")
+            #self.cl_mod_arr[:,:,:]=(ino.get_cls_from_name(self,clf_total=self.bias_file,clf_lensed="none",read_lensed=False,par_vary="none")).reshape((self.lmax+1)/NLB,NLB,self.nbins_total,self.nbins_total).mean(axis=1)
         for i in np.arange(self.npar_vary) :
             pname=self.params_fshr[i].name
+            pname_val= self.params_fshr[i].val
+            pname_dval= self.params_fshr[i].dval            
             if pname.startswith("im_fg") :
                 continue
             print "Deriv for "+pname
-            clp=(ino.get_cls(self,pname, 1)).reshape((self.lmax+1)/NLB,NLB,self.nbins_total,self.nbins_total).mean(axis=1)
-            clm=(ino.get_cls(self,pname,-1)).reshape((self.lmax+1)/NLB,NLB,self.nbins_total,self.nbins_total).mean(axis=1)
-            if self.params_fshr[i].onesided==0 :
-                self.dcl_arr[i,:,:,:]=(clp-clm)/(2*self.params_fshr[i].dval)
-            else :
-                sig=1
-                if self.params_fshr[i].onesided<0 :
-                    sig=-1
-                cl0=self.cl_fid_arr[:,:,:]
-                self.dcl_arr[i,:,:,:]=(-3*cl0+4*clm-clp)/(2*sig*self.params_fshr[i].dval)
+            #clp=(ino.get_cls(self,pname, 1)).reshape((self.lmax+1)/NLB,NLB,self.nbins_total,self.nbins_total).mean(axis=1)
+            #clm=(ino.get_cls(self,pname,-1)).reshape((self.lmax+1)/NLB,NLB,self.nbins_total,self.nbins_total).mean(axis=1)
+            clp=ino.get_cls(self,pname, 1)
+            clm=ino.get_cls(self,pname,-1)
+            #if self.params_fshr[i].onesided==0:
+            #    self.dcl_arr[i,:,:,:]=(clp=clm)/(2*self.params_fshr[i].dval)
+            #else:
+            #    sig=1
+            #    if self.params_fshr[i].onesided<0 :
+            #        sig=-1
+            #    cl0=self.cl_fid_arr[:,:,:]
+            #    self.dcl_arr[i,:,:,:]=(-2*cl0+4*clm-clp)/(2*sig*self.params_fshr[i].dval)
+                    
+            #print "cosmo_dictionary", cosmo_dictionary
+            #Darsh start: Need to define the difference in inverse covariances, i.e somekind of dicovp, dicovm
+            if self.include_SSC:
+                cosmo_dictionary_p = cosmo_dictionary.copy()
+                cosmo_dictionary_m = cosmo_dictionary.copy()            
+                #print "Old dictionary", cosmo_dictionary[pname]
+                if pname in cosmo_dictionary.keys():
+                    cosmo_dictionary_p[pname]=pname_val + pname_dval
+                    cosmo_dictionary_m[pname]=pname_val - pname_dval
+                    #print "P_cosmo", cosmo_dictionary_p
+                    #print "M_cosmo", cosmo_dictionary_m
+                    #print "Updated dictionary", cosmo_dictionary[pname]
+                    covp_full = self.get_inverse_covariance(pname,pname_val,pname_dval,+1,cosmo_dictionary_p,gstruct,
+                                                            False,cls_for_gauss=clp)
+                    covm_full = self.get_inverse_covariance(pname,pname_val,pname_dval,-1,cosmo_dictionary_m,gstruct,
+                                                            False,cls_for_gauss=clm)
+                    #print "NBINS", self.nbins_total
+                    #print "SHAPE OF COVM", np.shape(covm_full)
+                    #print "SHAPE OF CLM", np.shape(clm)
 
+                    if self.params_fshr[i].onesided==0 :
+                        self.dcl_arr[i,:,:,:]=(clp-clm)/(2*self.params_fshr[i].dval)
+                        self.dcov_full[i,:,:]=(covp_full - covm_full)/(2*self.params_fshr[i].dval) #dcov_full 
+                    else :
+                        sig=1
+                        if self.params_fshr[i].onesided<0 :
+                            sig=-1
+                        cl0=self.cl_fid_arr[:,:,:]
+                        self.dcl_arr[i,:,:,:]=(-3*cl0+4*clm-clp)/(2*sig*self.params_fshr[i].dval) 
+
+            elif self.include_SSC==False and self.PICM==False:
+                cosmo_dictionary_p = cosmo_dictionary.copy()
+                cosmo_dictionary_m = cosmo_dictionary.copy()
+                if pname in cosmo_dictionary.keys():
+                    cosmo_dictionary_p[pname]=pname_val+pname_dval
+                    cosmo_dictionary_m[pname]=pname_val-pname_dval
+                    cosmop=ccl.Cosmology(Omega_c=cosmo_dictionary_p['om'],Omega_b=cosmo_dictionary_p['ob'],h=cosmo_dictionary_p['hh'],A_s=2.1e-9,n_s=cosmo_dictionary_p['ns'],N_nu_rel=3.046,Omega_k=0.)
+                    cosmom=ccl.Cosmology(Omega_c=cosmo_dictionary_m['om'],Omega_b=cosmo_dictionary_m['ob'],h=cosmo_dictionary_m['hh'],A_s=2.1e-9,n_s=cosmo_dictionary_p['ns'],N_nu_rel=3.046,Omega_k=0.)
+                    covp_full = self.get_inverse_covariance(pname,pname_val,pname_dval,+1,cosmo_dictionary_p,gstruct,
+                                                            False,cls_for_gauss=clp)
+                    covm_full = self.get_inverse_covariance(pname,pname_val,pname_dval,-1,cosmo_dictionary_m,gstruct,
+                                                            False,cls_for_gauss=clm)
+                    if self.params_fshr[i].onesided==0 :
+                        self.dcl_arr[i,:,:,:]=(clp-clm)/(2*self.params_fshr[i].dval)
+                        self.dcov_full[i,:,:]=(covp_full - covm_full)/(2*self.params_fshr[i].dval) #dcov_full                                                                        
+                    else :
+                        sig=1
+                        if self.params_fshr[i].onesided<0 :
+                            sig=-1
+                        cl0=self.cl_fid_arr[:,:,:]
+                        self.dcl_arr[i,:,:,:]=(-3*cl0+4*clm-clp)/(2*sig*self.params_fshr[i].dval)
+
+            else:
+                 if self.params_fshr[i].onesided==0:
+                     self.dcl_arr[i,:,:,:]=(clp-clm)/(2*self.params_fshr[i].dval)
+                 else:
+                     sig=1
+                     if self.params_fshr[i].onesided<0:
+                         sig=-1
+                         cl0=self.cl_fid_arr[:,:,:]
+                         self.dcl_arr[i,:,:,:]=(-2*cl0+4*clm-clp)/(2*sig*self.params_fshr[i].dval)
+            #Darsh end
         if self.include_im_fg :
             print "Adding IM foregrounds"
             nbt1=0
@@ -719,22 +982,25 @@ class ParamRun:
                     nb2=tr2.nbins
                     if tr1.tracer_type=='intensity_mapping' :
                         if tr2.tracer_type=='intensity_mapping' :
-                            cls=(trc.get_foreground_cls(tr1,tr2,self.lmax,"none"))
-                            self.cl_fid_arr[:,nbt1:nbt1+nb1,nbt2:nbt2+nb2]+=cls.reshape((self.lmax+1)/NLB,NLB,nb1,nb2).mean(axis=1)
+                            cls=(trc.get_foreground_cls(tr1,tr2,self.larr,"none"))
+                            #self.cl_fid_arr[:,nbt1:nbt1+nb1,nbt2:nbt2+nb2]+=cls.reshape((self.lmax+1)/NLB,NLB,nb1,nb2).mean(axis=1)
+                            self.cl_fid_arr[:,nbt1:nbt1+nb1,nbt2:nbt2+nb2]+=cls
                             if self.fit_im_fg :
                                 for ip in np.arange(self.npar_vary) :
                                     pname=self.params_fshr[ip].name 
                                     if pname.startswith("im_fg") :
-                                        dcls=trc.get_foreground_cls(tr1,tr2,self.lmax,pname)
-                                        self.dcl_arr[ip,:,nbt1:nbt1+nb1,nbt2:nbt2+nb2]=dcls.reshape((self.lmax+1)/NLB,NLB,nb1,nb2).mean(axis=1)
+                                        dcls=trc.get_foreground_cls(tr1,tr2,self.larr,pname)
+                                        self.dcl_arr[ip,:,nbt1:nbt1+nb1,nbt2:nbt2+nb2]=dcls
                     nbt2+=nb2
                 nbt1+=nb1
 
         if self.include_m_bias:
             for m_bin in range(self.npar_mbias):
                 print "Deriv for m"+str(m_bin)
-                clp=(ino.get_cls(self,"none",0,+self.m_step,m_bin)).reshape((self.lmax+1)/NLB,NLB,self.nbins_total,self.nbins_total).mean(axis=1)
-                clm=(ino.get_cls(self,"none",0,-self.m_step,m_bin)).reshape((self.lmax+1)/NLB,NLB,self.nbins_total,self.nbins_total).mean(axis=1)
+                #clp=(ino.get_cls(self,"none",0,+self.m_step,m_bin)).reshape((self.lmax+1)/NLB,NLB,self.nbins_total,self.nbins_total).mean(axis=1)
+                #clm=(ino.get_cls(self,"none",0,-self.m_step,m_bin)).reshape((self.lmax+1)/NLB,NLB,self.nbins_total,self.nbins_total).mean(axis=1)
+                clp=ino.get_cls(self,"none",0,+self.m_step,m_bin)
+                clm=ino.get_cls(self,"none",0,-self.m_step,m_bin)
                 self.dcl_arr[self.npar_vary+m_bin,:,:,:]=(clp-clm)/(2*self.m_step)
 
 
@@ -767,8 +1033,9 @@ class ParamRun:
                 if self.tracers[i2].consider_tracer==False :
                     continue
                 nb2=self.tracers[i2].nbins
-                cls=trc.get_cross_noise(self.tracers[i1],self.tracers[i2],self.lmax)
-                self.cl_noise_arr[:,nbt1:nbt1+nb1,nbt2:nbt2+nb2]=cls.reshape((self.lmax+1)/NLB,NLB,nb1,nb2).mean(axis=1)
+                cls=trc.get_cross_noise(self.tracers[i1],self.tracers[i2],self.larr)
+                #self.cl_noise_arr[:,nbt1:nbt1+nb1,nbt2:nbt2+nb2]=cls.reshape((self.lmax+1)/NLB,NLB,nb1,nb2).mean(axis=1)
+                self.cl_noise_arr[:,nbt1:nbt1+nb1,nbt2:nbt2+nb2]=cls
                 nbt2+=nb2
             nbt1+=nb1
 
@@ -781,7 +1048,17 @@ class ParamRun:
                  fisher_l=self.fshr_l,fisher_cls=self.fshr_cls,
                  fisher_bao=self.fshr_bao,fisher_tot=self.fshr,
                  fisher_bias=self.fshr_bias,fisher_bias_l=self.fshr_bias_l,
+
+                 #Darsh start 
+#                 w_bias_vector = self.w_bias_vector,
+#                 dcov_full = self.dcov_full,
+                 pdcm_bias_v = self.pdcm_bias_v,
+                 fisher_PI = self.fshr_cls_PI,
+                 fisher_PD = self.fshr_cls_PD,
+                 #Darsh end
+=======
                  fisher_prior=self.fshr_prior,
+
                  names=names_arr,values=vals_arr,labels=labels_arr)
 
     def get_fisher_prior(self):
@@ -854,20 +1131,22 @@ class ParamRun:
             self.fshr_bao+=np.sum(dhh_nodes[:,None,:]*dhh_nodes[None,:,:]/self.e_nodes_HH**2,axis=2)
             self.fshr_bao+=np.sum(ddv_nodes[:,None,:]*ddv_nodes[None,:,:]/self.e_nodes_DV**2,axis=2)
 
+    def get_fisher_cls_map(self) :
+=======
 
     def get_fisher_cls_mat(self) :
+
         """ Compute Fisher matrix from numerical derivatives """
 
         if self.n_tracers<=0 :
             return
 
+        print "Using map formalism"
         fname_save=self.output_dir+"/"+self.output_fisher+"/fisher_raw.npz"
         if os.path.isfile(fname_save) :
             self.fshr_l=np.load(fname_save)['fisher_l']
             self.fshr_cls=np.load(fname_save)['fisher_cls']
         else :
-            icl_arr=np.zeros_like(self.cl_fid_arr)
-
             lmax_arr=np.zeros(self.nbins_total)
             lmin_arr=np.zeros(self.nbins_total)
             nbt=0
@@ -888,43 +1167,53 @@ class ParamRun:
                         lmin_arr[nbt]=lmn
                         nbt+=1
 
-            for lb in np.arange((self.lmax+1)/NLB) :
-                for ib in np.arange(NLB) :
-                    l=lb*NLB+ib
-                    if l==0 :
-                        continue
-                    ell=float(l)
-                    indices=np.where((lmin_arr<=l) & (lmax_arr>=l))[0]
-                    cl_fid=self.cl_fid_arr[lb,indices,:][:,indices]
-                    cl_noise=self.cl_noise_arr[lb,indices,:][:,indices]
-                    icl=np.linalg.inv(cl_fid+cl_noise)
-                    for i in np.arange(self.npar_vary+self.npar_mbias) :
-                        dcl1=self.dcl_arr[i,lb,indices,:][:,indices]
-                        for j in np.arange(self.npar_vary-i+self.npar_mbias)+i :
-                            dcl2=self.dcl_arr[j,lb,indices,:][:,indices]
-                            self.fshr_l[i,j,l]=self.fsky*(ell+0.5)*np.trace(np.dot(dcl1,
-                                                                                   np.dot(icl,
-                                                                                          np.dot(dcl2,
-                                                                                                 icl))))
-                            if i!=j :
-                                self.fshr_l[j,i,l]=self.fshr_l[i,j,l]
+            for il,l in enumerate(self.larr) :
+                dl_bpw=self.d_larr[il]
+                if l==0 :
+                    continue
+                ell=float(l)
+                fish_pre=dl_bpw*self.fsky*(ell+0.5)
+                indices=np.where((lmin_arr<=l) & (lmax_arr>=l))[0]
+                if len(indices)<=0 :
+                    continue
+                cl_fid=self.cl_fid_arr[il,indices,:][:,indices]
+                cl_noise=self.cl_noise_arr[il,indices,:][:,indices]
+                icl=np.linalg.inv(cl_fid+cl_noise)
+                for i in np.arange(self.npar_vary+self.npar_mbias) :
+                    dcl1=self.dcl_arr[i,il,indices,:][:,indices]
+                    for j in np.arange(self.npar_vary-i+self.npar_mbias)+i :
+                        dcl2=self.dcl_arr[j,il,indices,:][:,indices]
+                        self.fshr_l[i,j,il]=fish_pre*np.trace(np.dot(dcl1,
+                                                                     np.dot(icl,
+                                                                            np.dot(dcl2,icl))))
+                        if i!=j :
+                            self.fshr_l[j,i,il]=self.fshr_l[i,j,il]
 
             self.fshr_cls[:,:]=np.sum(self.fshr_l,axis=2)
 
 
+    def get_fisher_cls_pspec(self) :
+=======
+
     def get_fisher_cls_vec(self) :
+
         """ Compute Fisher matrix from numerical derivatives """
 
         if self.n_tracers<=0 :
             return
 
+
+        print "Using power spectrum formalism"
+=======
         print "YASSSSS"
-        
+
         fname_save=self.output_dir+"/"+self.output_fisher+"/fisher_raw.npz"
         if os.path.isfile(fname_save) :
             self.fshr_l=np.load(fname_save)['fisher_l']
             self.fshr_cls=np.load(fname_save)['fisher_cls']
         else :
+
+=======
             icl_arr=np.zeros_like(self.cl_fid_arr)
 
             lmax_arr=np.zeros(self.nbins_total)
@@ -947,6 +1236,114 @@ class ParamRun:
                         lmin_arr[nbt]=lmn
                         nbt+=1
 
+
+            for il,l in enumerate(self.larr) :
+                dl_bpw=self.d_larr[il]
+                if l==0 :
+                    continue
+                ell=float(l)
+                weight=1./(dl_bpw*self.fsky*(2*ell+1))
+                indices=np.where((lmin_arr<=l) & (lmax_arr>=l))[0]
+                if len(indices)<=0 :
+                    continue
+                gst=GaussSt(len(indices))
+                cl_fid_mat=(self.cl_fid_arr[il,indices,:][:,indices]+
+                            self.cl_noise_arr[il,indices,:][:,indices])
+                i_covar=np.linalg.inv(gst.gaussian_covariance(cl_fid_mat,weight))
+                for i in np.arange(self.npar_vary+self.npar_mbias) :
+                    dcl1=gst.unwrap_matrix(self.dcl_arr[i,il,indices,:][:,indices])
+                    for j in np.arange(self.npar_vary-i+self.npar_mbias)+i :
+                        dcl2=gst.unwrap_matrix(self.dcl_arr[j,il,indices,:][:,indices])
+                        self.fshr_l[i,j,il]=np.dot(dcl1,np.dot(i_covar,dcl2))
+                        if i!=j :
+                            self.fshr_l[j,i,il]=self.fshr_l[i,j,il]
+
+        self.fshr_cls[:,:]=np.sum(self.fshr_l,axis=2)
+        print "fshr_cls", self.fshr_cls
+
+    def get_fisher_cls_pspec_full(self) :
+        """ Compute Fisher matrix from numerical derivatives """
+
+        if self.n_tracers<=0 :
+            return
+
+        print "Using power spectrum formalism"
+        fname_save=self.output_dir+"/"+self.output_fisher+"/fisher_raw.npz"
+        #Darsh start: Putting in the parameter dependence 
+        if os.path.isfile(fname_save) :
+            self.fshr_l=np.load(fname_save)['fisher_l']
+            self.fshr_cls=np.load(fname_save)['fisher_cls']
+        else :
+            gst=GaussSt(self.nbins_total)
+            dclv=np.array([gst.unwrap_matrix(np.transpose(d,axes=[1,2,0])) for d in self.dcl_arr])
+            cosmo_default=self.def_cosmo_dictionary()
+            cosmo=ccl.Cosmology(Omega_c=cosmo_default['om'],Omega_b=cosmo_default['ob'],h=cosmo_default['hh'],sigma8=cosmo_default['s8'],n_s=cosmo_default['ns'],N_nu_rel=3.046,Omega_k=0.)
+            icovar = self.get_inverse_covariance('fid', None, None, None, cosmo_default,gst)
+            #print "SHAPE OF ICOV", np.shape(icovar)
+            #print "SHAPE OF CLS", np.shape(dclv)
+            covar=self.get_inverse_covariance('fid', None, None, None,cosmo_default,gst,False)
+            
+            #Darsh : Change for bias
+            if self.PDCM_bias : 
+                if self.PICM : 
+                    raise ValueError("Cant have PDCM bias without PDCM!")
+                else: 
+                    print "PDCM BIAS IS USED!"
+                    npar_tot=self.npar_vary+self.npar_mbias
+                    #icovar [ndata,ndata], dclv [npar,ndata]
+                    #w [npar,ndata]
+                    pdcm_bias_v=np.zeros([npar_tot,npar_tot,npar_tot])
+                    w=np.sum(icovar[None,:,:]*dclv[:,None,:],axis=2)
+                    for i1 in np.arange(npar_tot) :
+                        #w[npar,ndat] dcov_Full[ndat,ndat]
+                        #dot1[npar,ndat]
+                        dot1=np.sum(self.dcov_full[i1,:,:]*w[:,None,:],axis=2)
+                        self.pdcm_bias_v[i1,:,:]=np.sum(dot1[:,None,:]*w[None,:,:],axis=2)
+
+                    #pdcm_bias_v[npar,npar_dum,npar_dum]
+                    # bias_v=np.sum(np.sum(inv_fisher[None,:,:]*pdcm_bias_v[:,:,:],axis=2),axis=1)
+                    # bias=np.sum(inv_fisher[:,:]*bias_v[None,:],axis=1)
+
+            #Darsh : end bias stuff 
+
+            
+            if self.PICM:
+                print "Parameter independent covariance matrix"
+                for i1 in np.arange(self.npar_vary+self.npar_mbias) :
+                    icdcl=np.dot(icovar,dclv[i1])
+                    #print"DCLV1", np.shape(dclv[i1])
+                    for i2 in np.arange(i1,self.npar_vary+self.npar_mbias) :
+                        self.fshr_cls[i1,i2]=np.dot(dclv[i2],icdcl)
+                        if i1!=i2 :
+                            self.fshr_cls[i2,i1]=self.fshr_cls[i1,i2]
+                
+            else:
+                print "Parameter dependent covariance matrix"
+                for i1 in np.arange(self.npar_vary+self.npar_mbias) :
+                    icdcl=np.dot(icovar,dclv[i1])
+                    for i2 in np.arange(i1,self.npar_vary+self.npar_mbias) :
+                        self.fshr_cls_PI[i1,i2]=np.dot(dclv[i2],icdcl)
+                        self.fshr_cls_PD[i1,i2]=np.trace(np.dot(icovar,(np.dot(self.dcov_full[i1,:,:],np.dot(icovar,self.dcov_full[i2,:,:])))))
+                        self.fshr_cls[i1,i2] = self.fshr_cls_PI[i1,i2] + self.fshr_cls_PD[i1,i2]
+                        if i1!=i2 : 
+                            self.fshr_cls[i2,i1]=self.fshr_cls[i2,i1]
+            print "FISHER CLS!!!!", self.fshr_cls
+            #exit(1)
+                            
+       # print self.fshr_cls
+
+
+    def get_fisher_cls(self) :
+        print self.fisher_formalism
+        if self.fisher_formalism=='map' :
+            self.get_fisher_cls_map()
+        elif self.fisher_formalism=='pspec' :
+            self.get_fisher_cls_pspec()
+        elif self.fisher_formalism=='pspec_full' :
+            self.get_fisher_cls_pspec_full()
+
+    def get_bias_map(self) :
+=======
             for lb in np.arange((self.lmax+1)/NLB) :
                 for ib in np.arange(NLB) :
                     l=lb*NLB+ib
@@ -975,6 +1372,7 @@ class ParamRun:
             self.get_fisher_cls_mat()
             
     def get_bias_mat(self) :
+
         """ Compute the bias for each varied parameter """
         
         if self.bias_file=="none" :
@@ -983,12 +1381,11 @@ class ParamRun:
         if self.n_tracers<=0 :
             return
 
+        print "Using map formalism"
         fname_save=self.output_dir+"/"+self.output_fisher+"/fisher_raw.npz"
         if os.path.isfile(fname_save) :
             self.fshr_bias=np.load(fname_save)['fisher_bias']
         else :
-            icl_arr=np.zeros_like(self.cl_fid_arr)
-
             lmax_arr=np.zeros(self.nbins_total)
             lmin_arr=np.zeros(self.nbins_total)
             nbt=0
@@ -1009,21 +1406,75 @@ class ParamRun:
                         lmin_arr[nbt]=lmn
                         nbt+=1
 
-            for lb in np.arange((self.lmax+1)/NLB) :
-                for ib in np.arange(NLB) :
-                    l=lb*NLB+ib
-                    if l==0 :
-                        continue
-                    ell=float(l)
-                    indices=np.where((lmin_arr<=l) & (lmax_arr>=l))[0]
-                    cl_fid=self.cl_fid_arr[lb,indices,:][:,indices]
-                    cl_noise=self.cl_noise_arr[lb,indices,:][:,indices]
-                    icl=np.linalg.inv(cl_fid+cl_noise)
-                    cl_mod=self.cl_mod_arr[lb,indices,:][:,indices]
-                    for i in np.arange(self.npar_vary) :
-                        dcl1=self.dcl_arr[i,lb,indices,:][:,indices]
-                        self.fshr_bias_l[i,l]=self.fsky*(ell+0.5)*np.trace(np.dot(dcl1,np.dot(icl,np.dot((cl_mod-cl_fid),icl))))
-            
+            for il,l in enumerate(self.larr) :
+                dl_bpw=self.d_larr[il]
+                if l==0 :
+                    continue
+                ell=float(l)
+                fish_pre=dl_bpw*self.fsky*(ell+0.5)
+                indices=np.where((lmin_arr<=l) & (lmax_arr>=l))[0]
+                cl_fid=self.cl_fid_arr[il,indices,:][:,indices]
+                cl_noise=self.cl_noise_arr[il,indices,:][:,indices]
+                icl=np.linalg.inv(cl_fid+cl_noise)
+                cl_mod=self.cl_mod_arr[il,indices,:][:,indices]
+                for i in np.arange(self.npar_vary+self.npar_mbias) :
+                    dcl1=self.dcl_arr[i,il,indices,:][:,indices]
+                    self.fshr_bias_l[i,il]=fish_pre*np.trace(np.dot(dcl1,np.dot(icl,np.dot((cl_mod-cl_fid),icl))))
+                    
+            self.fshr_bias[:]=np.sum(self.fshr_bias_l,axis=1)
+
+    def get_bias_pspec(self) :
+        """ Compute the bias for each varied parameter """
+        
+        if self.bias_file=="none" :
+            return
+
+        if self.n_tracers<=0 :
+            return
+
+        print "Using power spectrum formalism"
+        fname_save=self.output_dir+"/"+self.output_fisher+"/fisher_raw.npz"
+        if os.path.isfile(fname_save) :
+            self.fshr_bias=np.load(fname_save)['fisher_bias']
+        else :
+            lmax_arr=np.zeros(self.nbins_total)
+            lmin_arr=np.zeros(self.nbins_total)
+            nbt=0
+            for tr in self.tracers :
+                if tr.consider_tracer :
+                    zarr=None
+                    if ((tr.tracer_type=='gal_clustering') or
+                        (tr.tracer_type=='intensity_mapping') or
+                        (tr.tracer_type=='gal_shear')) :
+                        data=np.loadtxt(tr.bins_file,unpack=True)
+                        zarr=(data[0]+data[1])/2
+                    for ib in np.arange(tr.nbins)  :
+                        if zarr is not None :
+                            lmn=tr.lmin
+                        else :
+                            lmn=tr.lmin
+                        lmax_arr[nbt]=min(tr.lmax_bins[ib],tr.lmax)
+                        lmin_arr[nbt]=lmn
+                        nbt+=1
+
+            for il,l in enumerate(self.larr) :
+                dl_bpw=self.d_larr[il]
+                if l==0 :
+                    continue
+                ell=float(l)
+                weight=1./(dl_bpw*self.fsky*(2*ell+1))
+                indices=np.where((lmin_arr<=l) & (lmax_arr>=l))[0]
+                gst=GaussSt(len(indices))
+                cl_fid_mat=(self.cl_fid_arr[il,indices,:][:,indices]+
+                            self.cl_noise_arr[il,indices,:][:,indices])
+                i_covar=np.linalg.inv(gst.gaussian_covariance(cl_fid_mat,weight))
+                dcl_mod=gst.unwrap_matrix(self.cl_mod_arr[il,indices,:][:,indices]-
+                                          self.cl_fid_arr[il,indices,:][:,indices])
+                dcl_mod_cov=np.dot(i_covar,dcl_mod)
+                for i in np.arange(self.npar_vary+self.npar_mbias) :
+                    dcl1=gst.unwrap_matrix(self.dcl_arr[i,il,indices,:][:,indices])
+                    self.fshr_bias_l[i,il]=np.dot(dcl1,dcl_mod_cov)
+                    
             self.fshr_bias[:]=np.sum(self.fshr_bias_l,axis=1)
             
     def get_bias_vec(self) :
@@ -1035,10 +1486,70 @@ class ParamRun:
         if self.n_tracers<=0 :
             return
 
+
+#Darsh start: Compute temporary vector for post processing
+
+#    def w_bias(self) : 
+#        print "CALLING W_BIAS VECTOR!!!!!!!"
+#        quit()
+#        if self.PICM : 
+#            raise ValueError("Cant have PDCM bias without PDCM!")
+#        else :
+#            print "PDCM bias vector is being computed"
+#            gst=GaussSt(self.nbins_total)
+#            dclv=np.array([gst.unwrap_matrix(np.transpose(d,axes=[1,2,0])) for d in self.dcl_arr])
+#            cosmo_default=self.def_cosmo_dictionary()
+#            cosmo=ccl.Cosmology(Omega_c=cosmo_default['om'],Omega_b=cosmo_default['ob'],h=cosmo_default['hh'],sigma8=cosmo_default['s8'],n_s=cosmo_default['ns'],N_nu_rel=3.046,Omega_k=0.)
+#           covar = self.get_inverse_covariance('fid', None, None, None, cosmo_default,gst,invert=False)
+#            print covar 
+#            quit()
+#            for i1 in np.arange(self.npar_vary + self.npar_mbias) : 
+#                self.w_bias_vector[i1] = np.dot(icovar,dclv[i1])
+
+#Darsh end
+
+    def get_bias_pspec_full(self) :
+        """ Compute the bias for each varied parameter """
+#        print "I AM USING BIAS PSPEC FULL!!!"
+#        quit()
+        if self.bias_file=="none" :
+            return
+
+        if self.n_tracers<=0 :
+            return
+
+        print "Using power spectrum formalism with external covariance"
+=======
+
         fname_save=self.output_dir+"/"+self.output_fisher+"/fisher_raw.npz"
         if os.path.isfile(fname_save) :
             self.fshr_bias=np.load(fname_save)['fisher_bias']
         else :
+
+            gst=GaussSt(self.nbins_total)
+            dclv=np.array([gst.unwrap_matrix(np.transpose(d,axes=[1,2,0])) for d in self.dcl_arr])
+            icovar=self.get_inverse_covariance('s8', None, None, None, cosmo_default, gst)
+            dclm=gsl.unwrap_matrix(np.transpose(self.cl_mod_arr-self.cl_fid_arr,axes=[1,2,0]))
+            dclm_c=np.dot(icovar,dclm)
+
+            for i1 in np.arange(self.npar_vary+self.npar_mbias) :
+                self.fshr_bias[i1]=np.dot(dclv[i1],dclm_c)
+
+    #Darsh start : PDCM BIAS 
+#    def get_PDCM_bias(self) : 
+#        if self.PDCM_bias == True : 
+#            self.w_bias()
+#            self.dcov_full()
+            
+    def get_bias(self) :
+        if self.fisher_formalism=='map' :
+            self.get_bias_map()
+        elif self.fisher_formalism=='pspec' :
+            self.get_bias_pspec()
+        elif self.fisher_formalism=='pspec_full' :
+            self.get_bias_pspec_full()
+
+=======
             icl_arr=np.zeros_like(self.cl_fid_arr)
 
             lmax_arr=np.zeros(self.nbins_total)
@@ -1108,6 +1619,7 @@ class ParamRun:
 
         return params_dict
             
+
     def plot_fisher(self) :
         covar=np.linalg.inv(self.fshr)
         fishfile=open(self.output_dir+"/"+self.output_fisher+"/fisher.out","w")
@@ -1162,7 +1674,7 @@ class ParamRun:
         cols=['r','g','b','k','y','m','c']
         ncols=len(cols)
         ibin_tot=0
-        larr=np.arange((self.lmax+1)/NLB)*NLB+0.5*(NLB-1)
+        larr=self.larr
         for tr in self.tracers :
             if tr.consider_tracer==False :
                 continue
@@ -1181,4 +1693,9 @@ class ParamRun:
             plt.legend(loc='lower left',labelspacing=0,ncol=1+tr.nbins/5,columnspacing=0.1)
             plt.ylabel("$C_\\ell$",fontsize=fs)
             plt.xlabel("$\\ell$",fontsize=fs)
+
             plt.savefig(self.output_dir+"/"+self.output_fisher+"/Cls_"+tr.name+self.plot_ext)
+
+=======
+            plt.savefig(self.output_dir+"/"+self.output_fisher+"/Cls_"+tr.name+self.plot_ext)
+
