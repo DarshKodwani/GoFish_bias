@@ -46,5 +46,5 @@ def compute_errors_percentage_unmarg(prefix1,prefix2,num_pname) :
     return dif_error, pname
 
 num_pname = 4
-print compute_errors_percentage("lens_GPI_fsky1", "lens_SPI_fsky1")
-print compute_errors_percentage_unmarg("lens_GPI_fsky1", "lens_SPI_fsky1",num_pname)
+print compute_errors_percentage("cluster_GPI_fsky1", "cluster_SPI_fsky1")
+print compute_errors_percentage_unmarg("cluster_GPI_fsky1", "cluster_SPI_fsky1",num_pname)
