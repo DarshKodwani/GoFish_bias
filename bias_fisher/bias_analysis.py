@@ -24,6 +24,8 @@ lenscluster_SPD_fsky1 = np.load("lenscluster_SPD_fsky1_bias/fisher_raw.npz")
 lenscluster_SPD_fsky04 = np.load("lenscluster_SPD_fsky04_bias/fisher_raw.npz")
 lenscluster_SPD_fsky005 = np.load("lenscluster_SPD_fsky005_bias/fisher_raw.npz")
 
+print lens_GPD_fsky1['names']
+
 ######## Extracting stuff #########
 
 #Clusters
@@ -142,6 +144,8 @@ bias_LCSD_f04 = (1/2.)*np.sum(ifish_PI_LCSPD_f04[:,:]*bias_v_LCSD_f04[None,:], a
 bias_v_LCSD_f005 = np.sum(np.sum(ifish_PI_LCSPD_f005[None,:,:]*bv_PI_LCSPD_f005[:,:,:], axis = 2),axis =1)
 bias_LCSD_f005 = (1/2.)*np.sum(ifish_PI_LCSPD_f005[:,:]*bias_v_LCSD_f005[None,:], axis = 1)
 
+print bias_v_LCGD_f1
+
 #Plots
 
 #Omega_m plot
@@ -216,19 +220,19 @@ plt.savefig("s8_bias.pdf")
 
 """ Creating data vectors for plots """
 
-w_a_GCbias = np.array([bias_CGD_f1[4], bias_CGD_f04[4], bias_CGD_f005[4]])
-w_a_SCbias = np.array([bias_CSD_f1[4], bias_CSD_f04[4], bias_CSD_f005[4]])
-w_a_GLbias = np.array([bias_LGD_f1[4], bias_LGD_f04[4], bias_LGD_f005[4]])
-w_a_SLbias = np.array([bias_LSD_f1[4], bias_LSD_f04[4], bias_LSD_f005[4]])
-w_a_GLCbias = np.array([bias_LCGD_f1[4], bias_LCGD_f04[4], bias_LCGD_f005[4]])
-w_a_SLCbias = np.array([bias_LCSD_f1[4], bias_LCSD_f04[4], bias_LCSD_f005[4]])
+w_a_GCbias = np.array([bias_CGD_f1[2], bias_CGD_f04[2], bias_CGD_f005[2]])
+w_a_SCbias = np.array([bias_CSD_f1[2], bias_CSD_f04[2], bias_CSD_f005[2]])
+w_a_GLbias = np.array([bias_LGD_f1[2], bias_LGD_f04[2], bias_LGD_f005[2]])
+w_a_SLbias = np.array([bias_LSD_f1[2], bias_LSD_f04[2], bias_LSD_f005[2]])
+w_a_GLCbias = np.array([bias_LCGD_f1[2], bias_LCGD_f04[2], bias_LCGD_f005[2]])
+w_a_SLCbias = np.array([bias_LCSD_f1[2], bias_LCSD_f04[2], bias_LCSD_f005[2]])
 
-w_a_GCerror = np.array([np.sqrt(ifish_PD_CGPD_f1[4,4]), np.sqrt(ifish_PD_CGPD_f04[4,4]), np.sqrt(ifish_PD_CGPD_f005[4,4])])
-w_a_SCerror = np.array([np.sqrt(ifish_PD_CSPD_f1[4,4]), np.sqrt(ifish_PD_CSPD_f04[4,4]), np.sqrt(ifish_PD_CSPD_f005[4,4])])
-w_a_GLerror = np.array([np.sqrt(ifish_PD_LGPD_f1[4,4]), np.sqrt(ifish_PD_LGPD_f04[4,4]), np.sqrt(ifish_PD_LGPD_f005[4,4])])
-w_a_SLerror = np.array([np.sqrt(ifish_PD_LSPD_f1[4,4]), np.sqrt(ifish_PD_LSPD_f04[4,4]), np.sqrt(ifish_PD_LSPD_f005[4,4])])
-w_a_GLCerror = np.array([np.sqrt(ifish_PD_LCGPD_f1[4,4]), np.sqrt(ifish_PD_LCGPD_f04[4,4]), np.sqrt(ifish_PD_LCGPD_f005[4,4])])
-w_a_SLCerror = np.array([np.sqrt(ifish_PD_LCSPD_f1[4,4]), np.sqrt(ifish_PD_LCSPD_f04[4,4]), np.sqrt(ifish_PD_LCSPD_f005[4,4])])
+w_a_GCerror = np.array([np.sqrt(ifish_PD_CGPD_f1[2,2]), np.sqrt(ifish_PD_CGPD_f04[2,2]), np.sqrt(ifish_PD_CGPD_f005[2,2])])
+w_a_SCerror = np.array([np.sqrt(ifish_PD_CSPD_f1[2,2]), np.sqrt(ifish_PD_CSPD_f04[2,2]), np.sqrt(ifish_PD_CSPD_f005[2,2])])
+w_a_GLerror = np.array([np.sqrt(ifish_PD_LGPD_f1[2,2]), np.sqrt(ifish_PD_LGPD_f04[2,2]), np.sqrt(ifish_PD_LGPD_f005[2,2])])
+w_a_SLerror = np.array([np.sqrt(ifish_PD_LSPD_f1[2,2]), np.sqrt(ifish_PD_LSPD_f04[2,2]), np.sqrt(ifish_PD_LSPD_f005[2,2])])
+w_a_GLCerror = np.array([np.sqrt(ifish_PD_LCGPD_f1[2,2]), np.sqrt(ifish_PD_LCGPD_f04[2,2]), np.sqrt(ifish_PD_LCGPD_f005[2,2])])
+w_a_SLCerror = np.array([np.sqrt(ifish_PD_LCSPD_f1[2,2]), np.sqrt(ifish_PD_LCSPD_f04[2,2]), np.sqrt(ifish_PD_LCSPD_f005[2,2])])
 
 
 fig3 = plt.figure(figsize=(11.0, 11.0))
@@ -250,19 +254,19 @@ plt.savefig("wa_bias.pdf")
 
 """ Creating data vectors for plots """
 
-w_0_GCbias = np.array([bias_CGD_f1[5], bias_CGD_f04[5], bias_CGD_f005[5]])
-w_0_SCbias = np.array([bias_CSD_f1[5], bias_CSD_f04[5], bias_CSD_f005[5]])
-w_0_GLbias = np.array([bias_LGD_f1[5], bias_LGD_f04[5], bias_LGD_f005[5]])
-w_0_SLbias = np.array([bias_LSD_f1[5], bias_LSD_f04[5], bias_LSD_f005[5]])
-w_0_GLCbias = np.array([bias_LCGD_f1[5], bias_LCGD_f04[5], bias_LCGD_f005[5]])
-w_0_SLCbias = np.array([bias_LCSD_f1[5], bias_LCSD_f04[5], bias_LCSD_f005[5]])
+w_0_GCbias = np.array([bias_CGD_f1[3], bias_CGD_f04[3], bias_CGD_f005[3]])
+w_0_SCbias = np.array([bias_CSD_f1[3], bias_CSD_f04[3], bias_CSD_f005[3]])
+w_0_GLbias = np.array([bias_LGD_f1[3], bias_LGD_f04[3], bias_LGD_f005[3]])
+w_0_SLbias = np.array([bias_LSD_f1[3], bias_LSD_f04[3], bias_LSD_f005[3]])
+w_0_GLCbias = np.array([bias_LCGD_f1[3], bias_LCGD_f04[3], bias_LCGD_f005[3]])
+w_0_SLCbias = np.array([bias_LCSD_f1[3], bias_LCSD_f04[3], bias_LCSD_f005[3]])
 
-w_0_GCerror = np.array([np.sqrt(ifish_PD_CGPD_f1[5,5]), np.sqrt(ifish_PD_CGPD_f04[5,5]), np.sqrt(ifish_PD_CGPD_f005[5,5])])
-w_0_SCerror = np.array([np.sqrt(ifish_PD_CSPD_f1[5,5]), np.sqrt(ifish_PD_CSPD_f04[5,5]), np.sqrt(ifish_PD_CSPD_f005[5,5])])
-w_0_GLerror = np.array([np.sqrt(ifish_PD_LGPD_f1[5,5]), np.sqrt(ifish_PD_LGPD_f04[5,5]), np.sqrt(ifish_PD_LGPD_f005[5,5])])
-w_0_SLerror = np.array([np.sqrt(ifish_PD_LSPD_f1[5,5]), np.sqrt(ifish_PD_LSPD_f04[5,5]), np.sqrt(ifish_PD_LSPD_f005[5,5])])
-w_0_GLCerror = np.array([np.sqrt(ifish_PD_LCGPD_f1[5,5]), np.sqrt(ifish_PD_LCGPD_f04[5,5]), np.sqrt(ifish_PD_LCGPD_f005[5,5])])
-w_0_SLCerror = np.array([np.sqrt(ifish_PD_LCSPD_f1[5,5]), np.sqrt(ifish_PD_LCSPD_f04[5,5]), np.sqrt(ifish_PD_LCSPD_f005[5,5])])
+w_0_GCerror = np.array([np.sqrt(ifish_PD_CGPD_f1[3,3]), np.sqrt(ifish_PD_CGPD_f04[3,3]), np.sqrt(ifish_PD_CGPD_f005[3,3])])
+w_0_SCerror = np.array([np.sqrt(ifish_PD_CSPD_f1[3,3]), np.sqrt(ifish_PD_CSPD_f04[3,3]), np.sqrt(ifish_PD_CSPD_f005[3,3])])
+w_0_GLerror = np.array([np.sqrt(ifish_PD_LGPD_f1[3,3]), np.sqrt(ifish_PD_LGPD_f04[3,3]), np.sqrt(ifish_PD_LGPD_f005[3,3])])
+w_0_SLerror = np.array([np.sqrt(ifish_PD_LSPD_f1[3,3]), np.sqrt(ifish_PD_LSPD_f04[3,3]), np.sqrt(ifish_PD_LSPD_f005[3,3])])
+w_0_GLCerror = np.array([np.sqrt(ifish_PD_LCGPD_f1[3,3]), np.sqrt(ifish_PD_LCGPD_f04[3,3]), np.sqrt(ifish_PD_LCGPD_f005[3,3])])
+w_0_SLCerror = np.array([np.sqrt(ifish_PD_LCSPD_f1[3,3]), np.sqrt(ifish_PD_LCSPD_f04[3,3]), np.sqrt(ifish_PD_LCSPD_f005[3,3])])
 
 
 fig4 = plt.figure(figsize=(11.0, 11.0))
