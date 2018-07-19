@@ -19,19 +19,6 @@ def print_sigmas(prefix) :
  #       errors.append(np.sqrt(cov[i,i]))
  #   return np.array(errors) #The shape of this object is [om,s8,ob,ns,wa,w0,bias...]. 
 
-#def compute_erros_percentage(prefix1,prefix2) :
-#    pkg1 = read_fisher(prefix1)
-#    cov1 = np.linalg.inv(pkg1['fisher'])
-#    errors1 = []
-#    
-#    pkg2 = read_fisher(prefix2)
-#    cov2 = np.linalg.inv(pkg2['fisher'])
-#    errors2 = []
-#    for i, nm in emuerate(pkg['names']) : 
-#        errors1.append(np.sqrt(cov1[i,i]))
-#        errors2.append(np.sqrt(cov2[i,i]))
-    
-    
 #print print_sigmas("lens_GPI_fsky1")
 #quit()
 
